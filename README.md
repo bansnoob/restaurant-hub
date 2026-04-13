@@ -1,10 +1,10 @@
 # Restaurant Hub
 
-A multi-location restaurant management platform built with Laravel 12. Handles employee management, attendance tracking, payroll processing, inventory, POS sales reporting, and expense tracking across multiple branches.
+A multi-location restaurant management platform built with Laravel 13. Handles employee management, attendance tracking, payroll processing, inventory, POS sales reporting, and expense tracking across multiple branches.
 
 ## Tech Stack
 
-- **Backend** — Laravel 12 (PHP 8.2+), Eloquent ORM, Spatie Laravel Permission
+- **Backend** — Laravel 13 (PHP 8.2+), Eloquent ORM, Spatie Laravel Permission
 - **Frontend** — Blade, Tailwind CSS 3, Alpine.js
 - **Database** — MySQL
 - **Build** — Vite
@@ -16,7 +16,7 @@ A multi-location restaurant management platform built with Laravel 12. Handles e
 | **Employees** | Staff records with hourly/daily rates and employment type |
 | **Attendance** | Clock-in/out, manual entry, and attendance history |
 | **Payroll** | Period-based payroll generation with configurable rules per branch |
-| **Inventory** | Ingredient tracking, stock movements, and recipe management |
+| **Inventory** | Ingredient tracking, stock adjustments, and movement history per branch |
 | **Sales** | POS sales reporting (transactions handled via mobile app) |
 | **Expenses** | Expense recording with categories and payment methods |
 
