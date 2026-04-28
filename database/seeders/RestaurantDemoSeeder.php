@@ -3,11 +3,10 @@
 namespace Database\Seeders;
 
 use App\Models\Branch;
-use App\Models\Employee;
+use App\Models\ExpenseCategory;
 use App\Models\Ingredient;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
-use App\Models\ExpenseCategory;
 use App\Models\PayrollRule;
 use App\Models\User;
 use Illuminate\Database\Seeder;

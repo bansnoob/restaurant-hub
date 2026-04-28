@@ -26,7 +26,7 @@ class Ingredient extends Model
         'current_stock' => 'decimal:3',
         'reorder_level' => 'decimal:3',
         'cost_per_unit' => 'decimal:4',
-        'is_active'     => 'boolean',
+        'is_active' => 'boolean',
     ];
 
     public function branch(): BelongsTo

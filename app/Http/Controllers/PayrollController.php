@@ -13,6 +13,7 @@ use Carbon\CarbonPeriod;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -326,11 +327,11 @@ class PayrollController extends Controller
 
     private function buildDailyBreakdown(
         Employee $employee,
-        \Illuminate\Support\Collection $records,
+        Collection $records,
         string $startDate,
         string $endDate,
         array $rules
-    ): \Illuminate\Support\Collection {
+    ): Collection {
         $dailyRate = (float) ($employee->daily_rate ?? 0);
         $requiredClockInTime = (string) ($rules['required_clock_in_time'] ?? '09:00:00');
         $firstDeductionTime = (string) ($rules['first_deduction_time'] ?? '09:15:00');

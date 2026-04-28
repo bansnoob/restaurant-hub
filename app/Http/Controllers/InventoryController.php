@@ -43,10 +43,10 @@ class InventoryController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'branch_id'     => ['required', 'integer', 'exists:branches,id'],
-            'name'          => ['required', 'string', 'max:120'],
-            'sku'           => ['nullable', 'string', 'max:40'],
-            'unit'          => ['required', 'in:g,kg,ml,l,pcs'],
+            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'name' => ['required', 'string', 'max:120'],
+            'sku' => ['nullable', 'string', 'max:40'],
+            'unit' => ['required', 'in:g,kg,ml,l,pcs'],
             'current_stock' => ['required', 'numeric', 'min:0'],
             'reorder_level' => ['required', 'numeric', 'min:0'],
             'cost_per_unit' => ['required', 'numeric', 'min:0'],
@@ -60,12 +60,12 @@ class InventoryController extends Controller
     public function update(Request $request, Ingredient $ingredient): RedirectResponse
     {
         $validated = $request->validate([
-            'name'          => ['required', 'string', 'max:120'],
-            'sku'           => ['nullable', 'string', 'max:40'],
-            'unit'          => ['required', 'in:g,kg,ml,l,pcs'],
+            'name' => ['required', 'string', 'max:120'],
+            'sku' => ['nullable', 'string', 'max:40'],
+            'unit' => ['required', 'in:g,kg,ml,l,pcs'],
             'reorder_level' => ['required', 'numeric', 'min:0'],
             'cost_per_unit' => ['required', 'numeric', 'min:0'],
-            'is_active'     => ['boolean'],
+            'is_active' => ['boolean'],
         ]);
 
         $ingredient->update($validated);
@@ -85,16 +85,16 @@ class InventoryController extends Controller
         $validated = $request->validate([
             'ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
             'movement_type' => ['required', 'in:purchase,adjustment,waste,return'],
-            'quantity'      => ['required', 'numeric', 'min:0.001'],
-            'unit_cost'     => ['nullable', 'numeric', 'min:0'],
-            'notes'         => ['nullable', 'string', 'max:500'],
+            'quantity' => ['required', 'numeric', 'min:0.001'],
+            'unit_cost' => ['nullable', 'numeric', 'min:0'],
+            'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
         $ingredient = Ingredient::findOrFail($validated['ingredient_id']);
 
         $direction = match ($validated['movement_type']) {
             'purchase', 'return', 'adjustment' => 'in',
-            'waste'                             => 'out',
+            'waste' => 'out',
         };
 
         // For adjustment type, allow the user to pick direction via a signed quantity
@@ -105,15 +105,15 @@ class InventoryController extends Controller
         }
 
         InventoryMovement::create([
-            'branch_id'           => $ingredient->branch_id,
-            'ingredient_id'       => $ingredient->id,
-            'direction'           => $direction,
-            'movement_type'       => $validated['movement_type'],
-            'quantity'            => $validated['quantity'],
-            'unit_cost'           => $validated['unit_cost'] ?? null,
-            'notes'               => $validated['notes'] ?? null,
-            'moved_at'            => now(),
-            'created_by_user_id'  => $request->user()->id,
+            'branch_id' => $ingredient->branch_id,
+            'ingredient_id' => $ingredient->id,
+            'direction' => $direction,
+            'movement_type' => $validated['movement_type'],
+            'quantity' => $validated['quantity'],
+            'unit_cost' => $validated['unit_cost'] ?? null,
+            'notes' => $validated['notes'] ?? null,
+            'moved_at' => now(),
+            'created_by_user_id' => $request->user()->id,
         ]);
 
         $delta = $direction === 'in' ? $validated['quantity'] : -$validated['quantity'];

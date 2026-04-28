@@ -28,8 +28,8 @@ class MenuItem extends Model
     protected $casts = [
         'base_price' => 'decimal:2',
         'cost_price' => 'decimal:2',
-        'tax_rate'   => 'decimal:2',
-        'is_active'  => 'boolean',
+        'tax_rate' => 'decimal:2',
+        'is_active' => 'boolean',
     ];
 
     public function branch(): BelongsTo

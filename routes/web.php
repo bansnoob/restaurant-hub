@@ -14,9 +14,9 @@ Route::get('/', function () {
     return view('welcome');
 })->name('welcome');
 
-Route::get('/stores/assignature', fn() => view('stores.assignature'))->name('stores.assignature');
-Route::get('/stores/ramen-naijiro', fn() => view('stores.ramen-naijiro'))->name('stores.ramen-naijiro');
-Route::get('/stores/marugo-takoyaki', fn() => view('stores.marugo-takoyaki'))->name('stores.marugo-takoyaki');
+Route::get('/stores/assignature', fn () => view('stores.assignature'))->name('stores.assignature');
+Route::get('/stores/ramen-naijiro', fn () => view('stores.ramen-naijiro'))->name('stores.ramen-naijiro');
+Route::get('/stores/marugo-takoyaki', fn () => view('stores.marugo-takoyaki'))->name('stores.marugo-takoyaki');
 
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])

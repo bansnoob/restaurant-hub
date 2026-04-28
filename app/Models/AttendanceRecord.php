@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AttendanceRecord extends Model
 {
@@ -21,4 +22,24 @@ class AttendanceRecord extends Model
         'notes',
         'captured_by_user_id',
     ];
+
+    protected $casts = [
+        'clock_in_at' => 'datetime',
+        'clock_out_at' => 'datetime',
+    ];
+
+    public function employee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class);
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function capturedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'captured_by_user_id');
+    }
 }

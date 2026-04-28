@@ -15,7 +15,7 @@ class RecipeItem extends Model
     ];
 
     protected $casts = [
-        'quantity'     => 'decimal:3',
+        'quantity' => 'decimal:3',
         'waste_factor' => 'decimal:2',
     ];
 

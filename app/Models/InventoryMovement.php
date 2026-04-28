@@ -22,9 +22,9 @@ class InventoryMovement extends Model
     ];
 
     protected $casts = [
-        'quantity'  => 'decimal:3',
+        'quantity' => 'decimal:3',
         'unit_cost' => 'decimal:4',
-        'moved_at'  => 'datetime',
+        'moved_at' => 'datetime',
     ];
 
     public function branch(): BelongsTo

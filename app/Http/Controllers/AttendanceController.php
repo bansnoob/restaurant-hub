@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\AttendanceException;
 use App\Models\AttendanceRecord;
 use App\Models\Employee;
 use App\Models\PayrollEntry;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollRule;
+use App\Services\AttendanceService;
 use App\Services\AttendanceSummaryCalculator;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -18,6 +20,10 @@ use Illuminate\View\View;
 
 class AttendanceController extends Controller
 {
+    public function __construct(
+        private readonly AttendanceService $attendanceService,
+    ) {}
+
     public function index(Request $request): View
     {
         $workDate = $request->string('work_date')->toString() ?: now()->toDateString();
@@ -73,27 +79,16 @@ class AttendanceController extends Controller
 
         $employee = Employee::findOrFail($validated['employee_id']);
 
-        $record = AttendanceRecord::firstOrCreate(
-            [
-                'employee_id' => $employee->id,
-                'work_date' => $validated['work_date'],
-            ],
-            [
-                'branch_id' => $employee->branch_id,
-                'captured_by_user_id' => $request->user()->id,
-            ]
-        );
-
-        if ($record->clock_in_at) {
-            return back()->with('error', 'This employee is already timed in for the selected date.');
+        try {
+            $this->attendanceService->clockIn(
+                $employee,
+                $validated['work_date'],
+                $request->user(),
+                $validated['notes'] ?? null
+            );
+        } catch (AttendanceException $e) {
+            return back()->with('error', $e->getMessage());
         }
-
-        $record->update([
-            'clock_in_at' => now(),
-            'status' => 'present',
-            'notes' => $validated['notes'] ?? null,
-            'captured_by_user_id' => $request->user()->id,
-        ]);
 
         return back()->with('success', 'Employee timed in successfully.');
     }
@@ -106,15 +101,11 @@ class AttendanceController extends Controller
 
         $record = AttendanceRecord::findOrFail($validated['record_id']);
 
-        if (! $record->clock_in_at) {
-            return back()->with('error', 'Cannot time out an employee without a clock-in record.');
+        try {
+            $this->attendanceService->clockOut($record);
+        } catch (AttendanceException $e) {
+            return back()->with('error', $e->getMessage());
         }
-
-        if ($record->clock_out_at) {
-            return back()->with('error', 'This attendance entry is already timed out.');
-        }
-
-        $record->update(['clock_out_at' => now()]);
 
         return back()->with('success', 'Employee timed out successfully.');
     }

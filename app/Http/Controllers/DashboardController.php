@@ -15,12 +15,12 @@ class DashboardController extends Controller
 {
     public function index()
     {
-        $today      = now()->toDateString();
+        $today = now()->toDateString();
         $monthStart = now()->startOfMonth()->toDateString();
 
         // ── Active headcount ──────────────────────────────────────────────
         $activeEmployees = Employee::where('is_active', true)->count();
-        $activeBranches  = Branch::where('is_active', true)->count();
+        $activeBranches = Branch::where('is_active', true)->count();
 
         // ── Today's snapshot ──────────────────────────────────────────────
         $todaySales = Sale::whereDate('sale_datetime', $today)
@@ -36,10 +36,10 @@ class DashboardController extends Controller
             ->groupBy('status')
             ->pluck('cnt', 'status');
 
-        $presentToday       = (int) ($todayAttendance->get('present', 0) + $todayAttendance->get('late', 0));
-        $absentToday        = (int) $todayAttendance->get('absent', 0);
-        $lateToday          = (int) $todayAttendance->get('late', 0);
-        $totalClockedToday  = (int) $todayAttendance->sum();
+        $presentToday = (int) ($todayAttendance->get('present', 0) + $todayAttendance->get('late', 0));
+        $absentToday = (int) $todayAttendance->get('absent', 0);
+        $lateToday = (int) $todayAttendance->get('late', 0);
+        $totalClockedToday = (int) $todayAttendance->sum();
 
         // ── Month-to-date ─────────────────────────────────────────────────
         $mtdSales = Sale::whereDate('sale_datetime', '>=', $monthStart)
@@ -55,7 +55,7 @@ class DashboardController extends Controller
         $draftPayrolls = PayrollPeriod::where('status', 'draft')->count();
 
         // ── 7-day sales trend ─────────────────────────────────────────────
-        $sevenDaysAgo  = now()->subDays(6)->toDateString();
+        $sevenDaysAgo = now()->subDays(6)->toDateString();
         $dailySalesMap = Sale::whereDate('sale_datetime', '>=', $sevenDaysAgo)
             ->where('status', 'completed')
             ->selectRaw('DATE(sale_datetime) as sale_date, SUM(grand_total) as total')
@@ -64,10 +64,11 @@ class DashboardController extends Controller
 
         $last7Days = collect(range(6, 0))->map(function ($i) use ($dailySalesMap) {
             $date = now()->subDays($i)->toDateString();
+
             return [
-                'date'     => $date,
-                'label'    => now()->subDays($i)->format('D'),
-                'total'    => (float) ($dailySalesMap->get($date, 0)),
+                'date' => $date,
+                'label' => now()->subDays($i)->format('D'),
+                'total' => (float) ($dailySalesMap->get($date, 0)),
                 'is_today' => $i === 0,
             ];
         });
