@@ -62,7 +62,7 @@
                                     @if (auth()->user()?->hasRole('owner'))
                                         <td class="py-2 pr-4">{{ number_format($summary['worked_hours'], 2) }}</td>
                                         <td class="py-2 pr-4">{{ number_format($summary['regular_hours'], 2) }}</td>
-                                        <td class="py-2 pr-4">PHP {{ number_format($summary['estimated_net_pay'], 2) }}</td>
+                                        <td class="py-2 pr-4">₱{{ number_format($summary['estimated_net_pay'], 2) }}</td>
                                     @endif
                                 </tr>
                             @empty

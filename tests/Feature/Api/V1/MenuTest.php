@@ -94,7 +94,7 @@ class MenuTest extends TestCase
         $response->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonStructure([
-                'data' => [['id', 'sku', 'name', 'base_price', 'tax_rate', 'is_active']],
+                'data' => [['id', 'sku', 'name', 'base_price', 'is_active']],
             ]);
     }
 

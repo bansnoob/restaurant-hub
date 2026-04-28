@@ -52,8 +52,7 @@
                         <select name="payment_method" class="w-full border rounded px-3 py-2" required>
                             <option value="cash">Cash</option>
                             <option value="bank_transfer">Bank Transfer</option>
-                            <option value="card">Card</option>
-                            <option value="e_wallet">E-Wallet</option>
+                            <option value="gcash">GCash</option>
                             <option value="other">Other</option>
                         </select>
                     </div>
@@ -70,7 +69,7 @@
             <div class="bg-white shadow-sm sm:rounded-lg p-6">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="font-semibold">Expense List</h3>
-                    <p class="text-sm text-gray-600">Total: PHP {{ number_format($totalExpenses, 2) }}</p>
+                    <p class="text-sm text-gray-600">Total: ₱{{ number_format($totalExpenses, 2) }}</p>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
@@ -88,7 +87,7 @@
                                 <tr class="border-b">
                                     <td class="py-2 pr-4">{{ $expense->expense_date }}</td>
                                     <td class="py-2 pr-4">{{ $expense->description }}</td>
-                                    <td class="py-2 pr-4">PHP {{ number_format($expense->amount, 2) }}</td>
+                                    <td class="py-2 pr-4">₱{{ number_format($expense->amount, 2) }}</td>
                                     <td class="py-2 pr-4">{{ ucfirst(str_replace('_', ' ', $expense->payment_method)) }}</td>
                                     <td class="py-2 pr-4">{{ ucfirst($expense->status) }}</td>
                                 </tr>

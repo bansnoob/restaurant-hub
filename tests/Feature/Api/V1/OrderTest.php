@@ -60,7 +60,7 @@ class OrderTest extends TestCase
             ->assertJsonStructure([
                 'data' => [
                     'id', 'order_number', 'order_type', 'status',
-                    'sub_total', 'tax_total', 'grand_total',
+                    'grand_total',
                     'items',
                 ],
             ]);

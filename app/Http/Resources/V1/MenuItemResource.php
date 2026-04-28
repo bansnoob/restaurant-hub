@@ -16,9 +16,7 @@ class MenuItemResource extends JsonResource
             'sku' => $this->sku,
             'name' => $this->name,
             'description' => $this->description,
-            'item_type' => $this->item_type,
             'base_price' => (float) $this->base_price,
-            'tax_rate' => (float) $this->tax_rate,
             'is_active' => $this->is_active,
             'category' => new MenuCategoryResource($this->whenLoaded('category')),
         ];

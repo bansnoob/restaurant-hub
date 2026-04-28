@@ -66,11 +66,11 @@ class AttendanceController extends Controller
     public function today(Request $request): AnonymousResourceCollection
     {
         $user = $request->user();
-        $employee = $user->employee;
+        $branchId = $user->resolveBranchId();
 
-        abort_unless($employee, 403, 'User is not linked to any branch.');
+        abort_unless($branchId, 403, 'User is not linked to any branch.');
 
-        $records = AttendanceRecord::where('branch_id', $employee->branch_id)
+        $records = AttendanceRecord::where('branch_id', $branchId)
             ->whereDate('work_date', now()->toDateString())
             ->with('employee')
             ->orderByDesc('clock_in_at')

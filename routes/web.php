@@ -5,6 +5,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\MenuController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SalesController;
@@ -58,6 +59,28 @@ Route::middleware('auth')->group(function () {
     Route::delete('/employees/{employee}', [EmployeeController::class, 'destroy'])
         ->middleware('role:owner')
         ->name('employees.destroy');
+
+    Route::get('/menu', [MenuController::class, 'index'])
+        ->middleware('role:owner')
+        ->name('menu.index');
+    Route::post('/menu/categories', [MenuController::class, 'storeCategory'])
+        ->middleware('role:owner')
+        ->name('menu.categories.store');
+    Route::put('/menu/categories/{category}', [MenuController::class, 'updateCategory'])
+        ->middleware('role:owner')
+        ->name('menu.categories.update');
+    Route::delete('/menu/categories/{category}', [MenuController::class, 'destroyCategory'])
+        ->middleware('role:owner')
+        ->name('menu.categories.destroy');
+    Route::post('/menu/items', [MenuController::class, 'storeItem'])
+        ->middleware('role:owner')
+        ->name('menu.items.store');
+    Route::put('/menu/items/{item}', [MenuController::class, 'updateItem'])
+        ->middleware('role:owner')
+        ->name('menu.items.update');
+    Route::delete('/menu/items/{item}', [MenuController::class, 'destroyItem'])
+        ->middleware('role:owner')
+        ->name('menu.items.destroy');
 
     Route::get('/sales', [SalesController::class, 'index'])
         ->middleware('role:owner')

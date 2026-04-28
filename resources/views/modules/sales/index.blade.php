@@ -28,15 +28,15 @@
                 </div>
                 <div class="bg-white shadow-sm sm:rounded-lg p-4">
                     <p class="text-sm text-gray-500">Gross Sales</p>
-                    <p class="text-2xl font-semibold">PHP {{ number_format($summary['gross_sales'], 2) }}</p>
+                    <p class="text-2xl font-semibold">₱{{ number_format($summary['gross_sales'], 2) }}</p>
                 </div>
                 <div class="bg-white shadow-sm sm:rounded-lg p-4">
                     <p class="text-sm text-gray-500">Discounts</p>
-                    <p class="text-2xl font-semibold">PHP {{ number_format($summary['discounts'], 2) }}</p>
+                    <p class="text-2xl font-semibold">₱{{ number_format($summary['discounts'], 2) }}</p>
                 </div>
                 <div class="bg-white shadow-sm sm:rounded-lg p-4">
                     <p class="text-sm text-gray-500">Taxes</p>
-                    <p class="text-2xl font-semibold">PHP {{ number_format($summary['taxes'], 2) }}</p>
+                    <p class="text-2xl font-semibold">₱{{ number_format($summary['taxes'], 2) }}</p>
                 </div>
             </div>
 
@@ -59,7 +59,7 @@
                                     <td class="py-2 pr-4">{{ \Illuminate\Support\Carbon::parse($sale->sale_datetime)->format('Y-m-d h:i A') }}</td>
                                     <td class="py-2 pr-4">{{ ucfirst(str_replace('_', ' ', $sale->order_type)) }}</td>
                                     <td class="py-2 pr-4">{{ ucfirst($sale->status) }}</td>
-                                    <td class="py-2 pr-4">PHP {{ number_format($sale->grand_total, 2) }}</td>
+                                    <td class="py-2 pr-4">₱{{ number_format($sale->grand_total, 2) }}</td>
                                 </tr>
                             @empty
                                 <tr>

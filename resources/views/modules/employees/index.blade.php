@@ -98,7 +98,7 @@
                                     <td class="py-2 pr-4">{{ $employee->first_name }} {{ $employee->last_name }}</td>
                                     <td class="py-2 pr-4">{{ $employee->branch?->name ?? '-' }}</td>
                                     <td class="py-2 pr-4">{{ ucfirst(str_replace('_', ' ', $employee->employment_type)) }}</td>
-                                    <td class="py-2 pr-4">{{ $employee->daily_rate !== null ? 'PHP '.number_format((float) $employee->daily_rate, 2) : '-' }}</td>
+                                    <td class="py-2 pr-4">{{ $employee->daily_rate !== null ? '₱'.number_format((float) $employee->daily_rate, 2) : '-' }}</td>
                                     <td class="py-2 pr-4">{{ $employee->is_active ? 'Active' : 'Inactive' }}</td>
                                     @if (auth()->user()?->hasRole('owner'))
                                         <td class="py-2 pr-4 whitespace-nowrap">

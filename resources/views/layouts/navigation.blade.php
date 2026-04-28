@@ -43,6 +43,15 @@
                 <span class="rh-nav-label">Employees</span>
             </a>
 
+            <a href="{{ route('menu.index') }}"
+               class="rh-nav-link {{ request()->routeIs('menu.*') ? 'rh-nav-link--active' : '' }}">
+                <svg class="rh-nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="14" height="14" rx="2"/>
+                    <path d="M3 8h14M8 8v9"/>
+                </svg>
+                <span class="rh-nav-label">Menu</span>
+            </a>
+
             <a href="{{ route('attendance.index') }}"
                class="rh-nav-link {{ request()->routeIs('attendance.*') ? 'rh-nav-link--active' : '' }}">
                 <svg class="rh-nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

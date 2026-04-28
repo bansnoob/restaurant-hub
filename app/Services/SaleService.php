@@ -35,7 +35,7 @@ class SaleService
                 'sale_datetime' => now(),
                 'cashier_user_id' => $cashier->id,
                 'table_label' => $data['table_label'] ?? null,
-                'order_type' => $data['order_type'],
+                'order_type' => $data['order_type'] ?? 'dine_in',
                 'status' => 'open',
                 'payment_method' => 'unpaid',
                 'notes' => $data['notes'] ?? null,
@@ -43,7 +43,6 @@ class SaleService
 
             $subTotal = 0.0;
             $discountTotal = 0.0;
-            $taxTotal = 0.0;
 
             foreach ($data['items'] as $item) {
                 $menuItem = MenuItem::findOrFail($item['menu_item_id']);
@@ -51,8 +50,7 @@ class SaleService
                 $unitPrice = (float) $menuItem->base_price;
                 $itemDiscount = (float) ($item['discount_total'] ?? 0);
                 $lineSubtotal = $unitPrice * $quantity;
-                $itemTax = round(($lineSubtotal - $itemDiscount) * ((float) $menuItem->tax_rate / 100), 2);
-                $lineTotal = round($lineSubtotal - $itemDiscount + $itemTax, 2);
+                $lineTotal = round($lineSubtotal - $itemDiscount, 2);
 
                 $sale->saleItems()->create([
                     'menu_item_id' => $menuItem->id,
@@ -60,22 +58,21 @@ class SaleService
                     'unit_price' => $unitPrice,
                     'quantity' => $quantity,
                     'discount_total' => $itemDiscount,
-                    'tax_total' => $itemTax,
+                    'tax_total' => 0,
                     'line_total' => $lineTotal,
                     'notes' => $item['notes'] ?? null,
                 ]);
 
                 $subTotal += $lineSubtotal;
                 $discountTotal += $itemDiscount;
-                $taxTotal += $itemTax;
             }
 
-            $grandTotal = round($subTotal - $discountTotal + $taxTotal, 2);
+            $grandTotal = round($subTotal - $discountTotal, 2);
 
             $sale->update([
                 'sub_total' => round($subTotal, 2),
                 'discount_total' => round($discountTotal, 2),
-                'tax_total' => round($taxTotal, 2),
+                'tax_total' => 0,
                 'grand_total' => $grandTotal,
             ]);
 
@@ -83,7 +80,7 @@ class SaleService
         });
     }
 
-    public function processPayment(Sale $sale, string $paymentMethod, float $paidTotal): Sale
+    public function processPayment(Sale $sale, string $paymentMethod, float $paidTotal, ?float $cashAmount = null, ?float $gcashAmount = null): Sale
     {
         if ($sale->status !== 'open') {
             throw new \RuntimeException('Only open orders can be paid.');
@@ -95,6 +92,8 @@ class SaleService
             'paid_total' => round($paidTotal, 2),
             'change_total' => max(0, $change),
             'payment_method' => $paymentMethod,
+            'cash_amount' => $cashAmount !== null ? round($cashAmount, 2) : null,
+            'gcash_amount' => $gcashAmount !== null ? round($gcashAmount, 2) : null,
             'status' => 'completed',
             'closed_at' => now(),
         ]);

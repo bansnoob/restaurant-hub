@@ -44,14 +44,14 @@ class SaleServiceTest extends TestCase
 
         $this->assertEquals('open', $sale->status);
         $this->assertEquals(200.00, (float) $sale->sub_total);
-        $this->assertEquals(24.00, (float) $sale->tax_total);
-        $this->assertEquals(224.00, (float) $sale->grand_total);
+        $this->assertEquals(0, (float) $sale->tax_total);
+        $this->assertEquals(200.00, (float) $sale->grand_total);
         $this->assertCount(1, $sale->saleItems);
 
         $saleItem = $sale->saleItems->first();
         $this->assertEquals(100.00, (float) $saleItem->unit_price);
         $this->assertEquals(2.0, (float) $saleItem->quantity);
-        $this->assertEquals(224.00, (float) $saleItem->line_total);
+        $this->assertEquals(200.00, (float) $saleItem->line_total);
     }
 
     public function test_create_order_with_discount(): void
@@ -74,18 +74,17 @@ class SaleServiceTest extends TestCase
             ],
         ], $cashier);
 
-        // sub_total = 100, discount = 10, taxable = 90, tax = 90 * 0.12 = 10.80
         $this->assertEquals(100.00, (float) $sale->sub_total);
         $this->assertEquals(10.00, (float) $sale->discount_total);
-        $this->assertEquals(10.80, (float) $sale->tax_total);
-        $this->assertEquals(100.80, (float) $sale->grand_total);
+        $this->assertEquals(0, (float) $sale->tax_total);
+        $this->assertEquals(90.00, (float) $sale->grand_total);
     }
 
     public function test_process_payment_completes_order(): void
     {
         $sale = Sale::factory()->create([
             'status' => 'open',
-            'grand_total' => 224.00,
+            'grand_total' => 200.00,
         ]);
 
         $result = $this->service->processPayment($sale, 'cash', 250.00);
@@ -93,7 +92,7 @@ class SaleServiceTest extends TestCase
         $this->assertEquals('completed', $result->status);
         $this->assertEquals('cash', $result->payment_method);
         $this->assertEquals(250.00, (float) $result->paid_total);
-        $this->assertEquals(26.00, (float) $result->change_total);
+        $this->assertEquals(50.00, (float) $result->change_total);
         $this->assertNotNull($result->closed_at);
     }
 

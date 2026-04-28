@@ -40,7 +40,7 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'branch_id' => ['sometimes', 'integer', 'exists:branches,id'],
-            'order_type' => ['required', 'in:dine_in,takeout,delivery'],
+            'order_type' => ['sometimes', 'in:dine_in,takeout,delivery'],
             'table_label' => ['nullable', 'string', 'max:40'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'items' => ['required', 'array', 'min:1'],
@@ -72,14 +72,18 @@ class OrderController extends Controller
         $this->authorizeBranchAccess($request, $sale);
 
         $validated = $request->validate([
-            'payment_method' => ['required', 'in:cash,card,e_wallet,mixed'],
+            'payment_method' => ['required', 'in:cash,gcash,mixed'],
             'paid_total' => ['required', 'numeric', 'min:0'],
+            'cash_amount' => ['nullable', 'numeric', 'min:0'],
+            'gcash_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $sale = $this->saleService->processPayment(
             $sale,
             $validated['payment_method'],
-            (float) $validated['paid_total']
+            (float) $validated['paid_total'],
+            isset($validated['cash_amount']) ? (float) $validated['cash_amount'] : null,
+            isset($validated['gcash_amount']) ? (float) $validated['gcash_amount'] : null,
         );
 
         return new SaleResource($sale->load('saleItems'));
@@ -106,10 +110,10 @@ class OrderController extends Controller
             return $request->integer('branch_id');
         }
 
-        $employee = $user->employee;
-        abort_unless($employee, 403, 'User is not linked to any branch.');
+        $branchId = $user->resolveBranchId();
+        abort_unless($branchId, 403, 'User is not linked to any branch.');
 
-        return (int) $employee->branch_id;
+        return $branchId;
     }
 
     private function authorizeBranchAccess(Request $request, Sale $sale): void
@@ -120,7 +124,7 @@ class OrderController extends Controller
             return;
         }
 
-        $employee = $user->employee;
-        abort_unless($employee && (int) $employee->branch_id === (int) $sale->branch_id, 403);
+        $branchId = $user->resolveBranchId();
+        abort_unless($branchId && $branchId === (int) $sale->branch_id, 403);
     }
 }

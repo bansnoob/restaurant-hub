@@ -48,7 +48,7 @@ class ExpenseController extends Controller
             'vendor_name' => ['nullable', 'string', 'max:140'],
             'description' => ['required', 'string', 'max:200'],
             'amount' => ['required', 'numeric', 'min:0.01'],
-            'payment_method' => ['required', 'in:cash,bank_transfer,card,e_wallet,other'],
+            'payment_method' => ['required', 'in:cash,bank_transfer,gcash,other'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'new_category_name' => ['nullable', 'string', 'max:100'],
         ]);

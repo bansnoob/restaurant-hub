@@ -31,9 +31,7 @@ class MenuItemFactory extends Factory
             'name' => Str::title($name),
             'slug' => Str::slug($name).'-'.fake()->unique()->randomNumber(3),
             'description' => fake()->sentence(),
-            'item_type' => fake()->randomElement(['food', 'beverage', 'other']),
             'base_price' => $price,
-            'cost_price' => round($price * 0.35, 2),
             'tax_rate' => 12.00,
             'is_active' => true,
         ];

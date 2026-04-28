@@ -18,16 +18,13 @@ class MenuItem extends Model
         'name',
         'slug',
         'description',
-        'item_type',
         'base_price',
-        'cost_price',
         'tax_rate',
         'is_active',
     ];
 
     protected $casts = [
         'base_price' => 'decimal:2',
-        'cost_price' => 'decimal:2',
         'tax_rate' => 'decimal:2',
         'is_active' => 'boolean',
     ];

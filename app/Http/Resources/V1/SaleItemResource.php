@@ -18,7 +18,6 @@ class SaleItemResource extends JsonResource
             'unit_price' => (float) $this->unit_price,
             'quantity' => (float) $this->quantity,
             'discount_total' => (float) $this->discount_total,
-            'tax_total' => (float) $this->tax_total,
             'line_total' => (float) $this->line_total,
             'notes' => $this->notes,
         ];

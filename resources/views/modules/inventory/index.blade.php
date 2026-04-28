@@ -126,7 +126,7 @@
                                     <td class="py-2 pr-4">
                                         {{ rtrim(rtrim(number_format((float)$ingredient->reorder_level, 3), '0'), '.') }} {{ $ingredient->unit }}
                                     </td>
-                                    <td class="py-2 pr-4">PHP {{ number_format((float)$ingredient->cost_per_unit, 4) }}</td>
+                                    <td class="py-2 pr-4">₱{{ number_format((float)$ingredient->cost_per_unit, 4) }}</td>
                                     <td class="py-2 pr-4">
                                         <span class="text-xs px-2 py-0.5 rounded-full {{ $ingredient->is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500' }}">
                                             {{ $ingredient->is_active ? 'Active' : 'Inactive' }}
@@ -270,7 +270,7 @@
                                         </span>
                                     </td>
                                     <td class="py-2 pr-4">{{ rtrim(rtrim(number_format((float)$movement->quantity, 3), '0'), '.') }}</td>
-                                    <td class="py-2 pr-4">{{ $movement->unit_cost !== null ? 'PHP ' . number_format((float)$movement->unit_cost, 4) : '—' }}</td>
+                                    <td class="py-2 pr-4">{{ $movement->unit_cost !== null ? '₱' . number_format((float)$movement->unit_cost, 4) : '—' }}</td>
                                     <td class="py-2 pr-4 text-gray-500">{{ $movement->createdBy->name ?? '—' }}</td>
                                     <td class="py-2 pr-4 text-gray-500">{{ $movement->notes ?? '—' }}</td>
                                 </tr>

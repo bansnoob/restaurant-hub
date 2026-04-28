@@ -20,12 +20,15 @@ class RolesAndAdminSeeder extends Seeder
             Role::firstOrCreate(['name' => $role]);
         }
 
+        $branch = \App\Models\Branch::where('code', 'MAIN001')->first();
+
         $owner = User::updateOrCreate(
             ['email' => 'owner@restauranthub.local'],
             [
                 'name' => 'System Owner',
                 'password' => Hash::make('password'),
                 'email_verified_at' => now(),
+                'branch_id' => $branch?->id,
             ]
         );
 

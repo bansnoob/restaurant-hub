@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AttendanceController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\EmployeeController;
 use App\Http\Controllers\Api\V1\MenuController;
 use App\Http\Controllers\Api\V1\OrderController;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,8 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::middleware('role:owner|cashier')->group(function () {
+            Route::get('/employees', [EmployeeController::class, 'index']);
+
             Route::post('/attendance/clock-in', [AttendanceController::class, 'clockIn']);
             Route::post('/attendance/clock-out', [AttendanceController::class, 'clockOut']);
             Route::get('/attendance/today', [AttendanceController::class, 'today']);

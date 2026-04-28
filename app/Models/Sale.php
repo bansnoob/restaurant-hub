@@ -26,6 +26,8 @@ class Sale extends Model
         'paid_total',
         'change_total',
         'payment_method',
+        'cash_amount',
+        'gcash_amount',
         'notes',
         'closed_at',
     ];
@@ -39,6 +41,8 @@ class Sale extends Model
         'grand_total' => 'decimal:2',
         'paid_total' => 'decimal:2',
         'change_total' => 'decimal:2',
+        'cash_amount' => 'decimal:2',
+        'gcash_amount' => 'decimal:2',
     ];
 
     public function branch(): BelongsTo

@@ -39,9 +39,16 @@ class RestaurantDemoSeeder extends Seeder
                         'name' => 'POS Cashier',
                         'password' => Hash::make('password'),
                         'email_verified_at' => now(),
+                        'branch_id' => $branch->id,
                     ]
                 ),
             ];
+
+            // Also set branch_id on the owner user if it exists
+            $owner = User::where('email', 'owner@restauranthub.local')->first();
+            if ($owner && ! $owner->branch_id) {
+                $owner->update(['branch_id' => $branch->id]);
+            }
 
             foreach ($usersByRole as $role => $user) {
                 $user->syncRoles([$role]);
@@ -132,30 +139,24 @@ class RestaurantDemoSeeder extends Seeder
                     'name' => 'Classic Burger',
                     'slug' => 'classic-burger',
                     'category_id' => $categoryIds['burgers'],
-                    'item_type' => 'food',
                     'base_price' => 8.90,
-                    'cost_price' => 3.40,
-                    'tax_rate' => 12.00,
+                    'tax_rate' => 0,
                 ],
                 [
                     'sku' => 'MI1002',
                     'name' => 'Creamy Carbonara',
                     'slug' => 'creamy-carbonara',
                     'category_id' => $categoryIds['pasta'],
-                    'item_type' => 'food',
                     'base_price' => 10.75,
-                    'cost_price' => 4.10,
-                    'tax_rate' => 12.00,
+                    'tax_rate' => 0,
                 ],
                 [
                     'sku' => 'MI2001',
                     'name' => 'Iced Tea',
                     'slug' => 'iced-tea',
                     'category_id' => $categoryIds['beverages'],
-                    'item_type' => 'beverage',
                     'base_price' => 2.50,
-                    'cost_price' => 0.65,
-                    'tax_rate' => 12.00,
+                    'tax_rate' => 0,
                 ],
             ];
 

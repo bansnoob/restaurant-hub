@@ -51,9 +51,9 @@ class MenuController extends Controller
             return $request->integer('branch_id');
         }
 
-        $employee = $user->employee;
-        abort_unless($employee, 403, 'User is not linked to any branch.');
+        $branchId = $user->resolveBranchId();
+        abort_unless($branchId, 403, 'User is not linked to any branch.');
 
-        return (int) $employee->branch_id;
+        return $branchId;
     }
 }
