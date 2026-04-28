@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\InventoryController;
@@ -17,9 +18,9 @@ Route::get('/stores/assignature', fn() => view('stores.assignature'))->name('sto
 Route::get('/stores/ramen-naijiro', fn() => view('stores.ramen-naijiro'))->name('stores.ramen-naijiro');
 Route::get('/stores/marugo-takoyaki', fn() => view('stores.marugo-takoyaki'))->name('stores.marugo-takoyaki');
 
-Route::get('/dashboard', function () {
-    return view('dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])
+    ->middleware(['auth', 'verified'])
+    ->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
