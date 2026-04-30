@@ -9,7 +9,7 @@
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=cormorant-garamond:400,500,600,700|dm-mono:400,500|manrope:400,500,600,700&display=swap" rel="stylesheet" />
+        <link href="https://fonts.bunny.net/css?family=source-serif-4:400,500,600,700|dm-mono:400,500|manrope:400,500,600,700&display=swap" rel="stylesheet" />
 
         <!-- Theme: apply before render to avoid flash -->
         <script>

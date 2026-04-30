@@ -1,14 +1,17 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers;
 
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
+use App\Models\DayClosure;
 use App\Models\Employee;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\Ingredient;
-use App\Models\PayrollPeriod;
+use App\Models\PayrollEntry;
 use App\Models\Sale;
 
 class DashboardController extends Controller
@@ -22,15 +25,33 @@ class DashboardController extends Controller
         $activeEmployees = Employee::where('is_active', true)->count();
         $activeBranches = Branch::where('is_active', true)->count();
 
-        // ── Today's snapshot ──────────────────────────────────────────────
-        $todaySales = Sale::whereDate('sale_datetime', $today)
-            ->where('status', 'completed')
-            ->sum('grand_total');
+        // ── Today's sales (split by payment method) ───────────────────────
+        $todaySalesQuery = Sale::whereDate('sale_datetime', $today)->where('status', 'completed');
+        $todaySales = (float) (clone $todaySalesQuery)->sum('grand_total');
+        $todayOrderCount = (clone $todaySalesQuery)->count();
 
-        $todayExpenses = Expense::whereDate('expense_date', $today)
-            ->where('status', 'approved')
-            ->sum('amount');
+        $todayCashOnly = (float) (clone $todaySalesQuery)->where('payment_method', 'cash')->sum('grand_total');
+        $todayGcashOnly = (float) (clone $todaySalesQuery)->where('payment_method', 'gcash')->sum('grand_total');
+        $todayMixedCash = (float) (clone $todaySalesQuery)->where('payment_method', 'mixed')->sum('cash_amount');
+        $todayMixedGcash = (float) (clone $todaySalesQuery)->where('payment_method', 'mixed')->sum('gcash_amount');
 
+        $todayCashSales = $todayCashOnly + $todayMixedCash;
+        $todayGcashSales = $todayGcashOnly + $todayMixedGcash;
+
+        $todayCashOrderCount = (clone $todaySalesQuery)->where('payment_method', 'cash')->count();
+        $todayGcashOrderCount = (clone $todaySalesQuery)->where('payment_method', 'gcash')->count();
+        $todayMixedOrderCount = (clone $todaySalesQuery)->where('payment_method', 'mixed')->count();
+
+        // ── Today's expenses ──────────────────────────────────────────────
+        $todayExpensesQuery = Expense::whereDate('expense_date', $today)->where('status', 'approved');
+        $todayExpenses = (float) (clone $todayExpensesQuery)->sum('amount');
+        $todayCashExpenses = (float) (clone $todayExpensesQuery)->where('payment_method', 'cash')->sum('amount');
+
+        // ── Derived headline metrics ──────────────────────────────────────
+        $todayNetIncome = $todaySales - $todayExpenses;
+        $todayCashOnHand = $todayCashSales - $todayCashExpenses;
+
+        // ── Today's attendance ────────────────────────────────────────────
         $todayAttendance = AttendanceRecord::whereDate('work_date', $today)
             ->selectRaw('status, COUNT(*) as cnt')
             ->groupBy('status')
@@ -42,17 +63,17 @@ class DashboardController extends Controller
         $totalClockedToday = (int) $todayAttendance->sum();
 
         // ── Month-to-date ─────────────────────────────────────────────────
-        $mtdSales = Sale::whereDate('sale_datetime', '>=', $monthStart)
+        $mtdSales = (float) Sale::whereDate('sale_datetime', '>=', $monthStart)
             ->whereDate('sale_datetime', '<=', $today)
             ->where('status', 'completed')
             ->sum('grand_total');
 
-        $mtdExpenses = Expense::whereDate('expense_date', '>=', $monthStart)
+        $mtdExpenses = (float) Expense::whereDate('expense_date', '>=', $monthStart)
             ->whereDate('expense_date', '<=', $today)
             ->where('status', 'approved')
             ->sum('amount');
 
-        $draftPayrolls = PayrollPeriod::where('status', 'draft')->count();
+        $draftPayrolls = PayrollEntry::where('status', 'draft')->count();
 
         // ── 7-day sales trend ─────────────────────────────────────────────
         $sevenDaysAgo = now()->subDays(6)->toDateString();
@@ -73,20 +94,19 @@ class DashboardController extends Controller
             ];
         });
 
-        $chartMax = max($last7Days->max('total'), 1);
+        $chartMax = max((float) $last7Days->max('total'), 1.0);
 
         // ── Low stock alerts ──────────────────────────────────────────────
         $lowStockItems = Ingredient::where('is_active', true)
             ->whereColumn('current_stock', '<=', 'reorder_level')
             ->count();
 
-        // ── Recent sales ──────────────────────────────────────────────────
+        // ── Recent activity ───────────────────────────────────────────────
         $recentSales = Sale::where('status', 'completed')
             ->orderByDesc('sale_datetime')
             ->limit(6)
             ->get(['order_number', 'sale_datetime', 'grand_total', 'order_type', 'payment_method']);
 
-        // ── Recent expenses ───────────────────────────────────────────────
         $recentExpenses = Expense::where('status', 'approved')
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
@@ -98,11 +118,26 @@ class DashboardController extends Controller
             $recentExpenses->pluck('expense_category_id')->filter()->unique()
         )->pluck('name', 'id');
 
+        // ── Today's closure ───────────────────────────────────────────────
+        $todayClosure = DayClosure::whereDate('closed_at_date', $today)
+            ->with('closedBy:id,name')
+            ->orderByDesc('id')
+            ->first();
+
         return view('dashboard', compact(
             'activeEmployees',
             'activeBranches',
             'todaySales',
             'todayExpenses',
+            'todayNetIncome',
+            'todayCashSales',
+            'todayGcashSales',
+            'todayCashExpenses',
+            'todayCashOnHand',
+            'todayOrderCount',
+            'todayCashOrderCount',
+            'todayGcashOrderCount',
+            'todayMixedOrderCount',
             'presentToday',
             'absentToday',
             'lateToday',
@@ -115,7 +150,8 @@ class DashboardController extends Controller
             'lowStockItems',
             'recentSales',
             'recentExpenses',
-            'expenseCategoryNames'
+            'expenseCategoryNames',
+            'todayClosure'
         ));
     }
 }

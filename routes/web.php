@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DayClosureController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\InventoryController;
@@ -50,12 +51,18 @@ Route::middleware('auth')->group(function () {
     Route::get('/employees', [EmployeeController::class, 'index'])
         ->middleware('role:owner|cashier')
         ->name('employees.index');
+    Route::get('/employees/{employee}/details', [EmployeeController::class, 'show'])
+        ->middleware('role:owner|cashier')
+        ->name('employees.show');
     Route::post('/employees', [EmployeeController::class, 'store'])
         ->middleware('role:owner|cashier')
         ->name('employees.store');
     Route::put('/employees/{employee}', [EmployeeController::class, 'update'])
         ->middleware('role:owner')
         ->name('employees.update');
+    Route::patch('/employees/{employee}/toggle-active', [EmployeeController::class, 'toggleActive'])
+        ->middleware('role:owner')
+        ->name('employees.toggle-active');
     Route::delete('/employees/{employee}', [EmployeeController::class, 'destroy'])
         ->middleware('role:owner')
         ->name('employees.destroy');
@@ -85,13 +92,39 @@ Route::middleware('auth')->group(function () {
     Route::get('/sales', [SalesController::class, 'index'])
         ->middleware('role:owner')
         ->name('sales.index');
+    Route::get('/sales/{sale}/details', [SalesController::class, 'show'])
+        ->middleware('role:owner')
+        ->name('sales.show');
+
+    // Day closures (cash report)
+    Route::get('/cash-report', [DayClosureController::class, 'index'])
+        ->middleware('role:owner|cashier')
+        ->name('day-closures.index');
+    Route::get('/day-close/preview', [DayClosureController::class, 'preview'])
+        ->middleware('role:owner|cashier')
+        ->name('day-close.preview');
+    Route::post('/day-close', [DayClosureController::class, 'store'])
+        ->middleware('role:owner|cashier')
+        ->name('day-close.store');
+    Route::delete('/day-close/{dayClosure}', [DayClosureController::class, 'destroy'])
+        ->middleware('role:owner')
+        ->name('day-close.destroy');
 
     Route::get('/expenses', [ExpenseController::class, 'index'])
         ->middleware('role:owner')
         ->name('expenses.index');
+    Route::get('/expenses/{expense}/details', [ExpenseController::class, 'show'])
+        ->middleware('role:owner')
+        ->name('expenses.show');
     Route::post('/expenses', [ExpenseController::class, 'store'])
         ->middleware('role:owner')
         ->name('expenses.store');
+    Route::put('/expenses/{expense}', [ExpenseController::class, 'update'])
+        ->middleware('role:owner')
+        ->name('expenses.update');
+    Route::delete('/expenses/{expense}', [ExpenseController::class, 'destroy'])
+        ->middleware('role:owner')
+        ->name('expenses.destroy');
 
     Route::get('/payroll', [PayrollController::class, 'index'])
         ->middleware('role:owner')
@@ -105,6 +138,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/payroll/generate', [PayrollController::class, 'generate'])
         ->middleware('role:owner')
         ->name('payroll.generate');
+    Route::post('/payroll/bulk-generate', [PayrollController::class, 'bulkGenerate'])
+        ->middleware('role:owner')
+        ->name('payroll.bulk-generate');
     Route::post('/payroll/finalize', [PayrollController::class, 'finalize'])
         ->middleware('role:owner')
         ->name('payroll.finalize');
@@ -119,6 +155,21 @@ Route::middleware('auth')->group(function () {
     Route::get('/inventory', [InventoryController::class, 'index'])
         ->middleware('role:owner')
         ->name('inventory.index');
+    Route::get('/inventory/counts/start', [InventoryController::class, 'startCount'])
+        ->middleware('role:owner')
+        ->name('inventory.counts.start');
+    Route::post('/inventory/counts', [InventoryController::class, 'storeCount'])
+        ->middleware('role:owner')
+        ->name('inventory.counts.store');
+    Route::get('/inventory/counts/{stockCount}/details', [InventoryController::class, 'showCount'])
+        ->middleware('role:owner')
+        ->name('inventory.counts.show');
+    Route::delete('/inventory/counts/{stockCount}', [InventoryController::class, 'destroyCount'])
+        ->middleware('role:owner')
+        ->name('inventory.counts.destroy');
+    Route::get('/inventory/{ingredient}/details', [InventoryController::class, 'showIngredient'])
+        ->middleware('role:owner')
+        ->name('inventory.show');
     Route::post('/inventory', [InventoryController::class, 'store'])
         ->middleware('role:owner')
         ->name('inventory.store');
@@ -128,9 +179,6 @@ Route::middleware('auth')->group(function () {
     Route::delete('/inventory/{ingredient}', [InventoryController::class, 'destroy'])
         ->middleware('role:owner')
         ->name('inventory.destroy');
-    Route::post('/inventory/adjust', [InventoryController::class, 'adjust'])
-        ->middleware('role:owner')
-        ->name('inventory.adjust');
 });
 
 require __DIR__.'/auth.php';

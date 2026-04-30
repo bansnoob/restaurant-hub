@@ -20,10 +20,17 @@ class Employee extends Model
         'email',
         'phone',
         'hire_date',
+        'birthday',
         'employment_type',
         'hourly_rate',
         'daily_rate',
         'is_active',
+    ];
+
+    protected $casts = [
+        'hire_date' => 'date',
+        'birthday' => 'date',
+        'is_active' => 'boolean',
     ];
 
     public function branch(): BelongsTo

@@ -29,22 +29,110 @@ class AttendanceController extends Controller
         $workDate = $request->string('work_date')->toString() ?: now()->toDateString();
         $dateFrom = $request->string('date_from')->toString() ?: now()->startOfWeek()->toDateString();
         $dateTo = $request->string('date_to')->toString() ?: now()->endOfWeek()->toDateString();
+        $branchFilter = $request->query('branch_id');
 
-        $employees = Employee::where('is_active', true)->orderBy('last_name')->get();
+        $employees = Employee::where('is_active', true)
+            ->with('branch')
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get();
         $employeeIds = $employees->pluck('id');
+
+        $branches = \App\Models\Branch::where('is_active', true)->orderBy('name')->get();
+
+        $rulesByBranch = PayrollRule::whereIn('branch_id', $employees->pluck('branch_id')->unique())
+            ->get()
+            ->keyBy('branch_id');
 
         $records = AttendanceRecord::whereDate('work_date', $workDate)
             ->orderByDesc('clock_in_at')
             ->get();
+        $recordsByEmployee = $records->keyBy('employee_id');
+
+        $rosterEmployees = $employees;
+        if (! empty($branchFilter) && is_numeric($branchFilter)) {
+            $rosterEmployees = $rosterEmployees->where('branch_id', (int) $branchFilter)->values();
+        }
+
+        $roster = $rosterEmployees->map(function (Employee $employee) use ($recordsByEmployee, $rulesByBranch, $workDate): array {
+            $record = $recordsByEmployee->get($employee->id);
+            $rule = $rulesByBranch->get($employee->branch_id);
+
+            $clockInAt = $record?->clock_in_at ? Carbon::parse($record->clock_in_at) : null;
+            $clockOutAt = $record?->clock_out_at ? Carbon::parse($record->clock_out_at) : null;
+
+            $state = 'not_yet';
+            if ($record) {
+                if ($record->status === 'absent') {
+                    $state = 'absent';
+                } elseif (in_array($record->status, ['leave', 'holiday'], true)) {
+                    $state = 'leave';
+                } elseif ($clockInAt && $clockOutAt) {
+                    $state = 'done';
+                } elseif ($clockInAt) {
+                    $state = 'working';
+                }
+            }
+
+            $isLate = false;
+            if ($clockInAt && $rule) {
+                $required = $rule->required_clock_in_time ?? '09:00:00';
+                $grace = (int) ($rule->grace_minutes ?? 0);
+                $boundary = Carbon::parse($workDate.' '.$required)->addMinutes($grace);
+                $isLate = $clockInAt->gt($boundary);
+            } elseif ($record?->status === 'late') {
+                $isLate = true;
+            }
+
+            $minutesWorked = 0;
+            if ($clockInAt && $clockOutAt) {
+                $minutesWorked = $clockInAt->diffInMinutes($clockOutAt) - (int) ($record->break_minutes ?? 0);
+                $minutesWorked = max(0, $minutesWorked);
+            }
+
+            return [
+                'employee_id' => $employee->id,
+                'employee_code' => $employee->employee_code,
+                'first_name' => $employee->first_name,
+                'last_name' => $employee->last_name,
+                'full_name' => trim($employee->first_name.' '.$employee->last_name),
+                'branch_id' => $employee->branch_id,
+                'branch_name' => $employee->branch?->name,
+                'state' => $state,
+                'is_late' => $isLate,
+                'record_id' => $record?->id,
+                'clock_in_at' => $clockInAt?->toIso8601String(),
+                'clock_in_label' => $clockInAt?->format('h:i A'),
+                'clock_out_at' => $clockOutAt?->toIso8601String(),
+                'clock_out_label' => $clockOutAt?->format('h:i A'),
+                'status' => $record?->status,
+                'notes' => $record?->notes,
+                'hours_worked' => round($minutesWorked / 60, 2),
+            ];
+        });
+
+        $stats = [
+            'present' => $roster->whereIn('state', ['working', 'done'])->count(),
+            'late' => $roster->where('is_late', true)->count(),
+            'absent' => $roster->where('state', 'absent')->count(),
+            'working_now' => $roster->where('state', 'working')->count(),
+            'not_yet' => $roster->where('state', 'not_yet')->count(),
+            'total_hours' => round($roster->sum('hours_worked'), 1),
+        ];
+
+        $rosterByState = [
+            'working' => $roster->where('state', 'working')->values(),
+            'done' => $roster->where('state', 'done')->values(),
+            'not_yet' => $roster->where('state', 'not_yet')->values(),
+            'absent' => $roster->where('state', 'absent')->values(),
+            'leave' => $roster->where('state', 'leave')->values(),
+        ];
 
         $recordsInRange = AttendanceRecord::whereIn('employee_id', $employeeIds)
             ->whereDate('work_date', '>=', $dateFrom)
             ->whereDate('work_date', '<=', $dateTo)
             ->get()
             ->groupBy('employee_id');
-        $rulesByBranch = PayrollRule::whereIn('branch_id', $employees->pluck('branch_id')->unique())
-            ->get()
-            ->keyBy('branch_id');
 
         $calculator = app(AttendanceSummaryCalculator::class);
         $summaries = $employees->map(function (Employee $employee) use ($calculator, $recordsInRange, $rulesByBranch, $dateFrom, $dateTo): array {
@@ -63,9 +151,14 @@ class AttendanceController extends Controller
             'workDate' => $workDate,
             'dateFrom' => $dateFrom,
             'dateTo' => $dateTo,
+            'branchFilter' => $branchFilter,
+            'branches' => $branches,
             'employees' => $employees,
             'records' => $records,
             'summaries' => $summaries,
+            'roster' => $roster,
+            'rosterByState' => $rosterByState,
+            'stats' => $stats,
         ]);
     }
 

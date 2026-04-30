@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers;
 
 use App\Models\AttendanceRecord;
@@ -20,7 +22,7 @@ use Illuminate\View\View;
 
 class PayrollController extends Controller
 {
-    public function index(): View
+    public function index(Request $request): View
     {
         $branches = Branch::where('is_active', true)->orderBy('name')->get();
         $employees = Employee::where('is_active', true)
@@ -29,15 +31,57 @@ class PayrollController extends Controller
             ->orderBy('first_name')
             ->get();
 
-        $reports = PayrollEntry::query()
+        $branchFilter = $request->query('branch_id');
+        $statusFilter = (string) $request->query('status', '');
+        $search = trim((string) $request->query('search', ''));
+
+        $reportsQuery = PayrollEntry::query()
             ->with(['employee.branch', 'payrollPeriod.branch'])
             ->whereHas('payrollPeriod')
-            ->orderByDesc('id')
-            ->paginate(15);
+            ->join('payroll_periods', 'payroll_entries.payroll_period_id', '=', 'payroll_periods.id')
+            ->select('payroll_entries.*')
+            ->orderByDesc('payroll_periods.end_date')
+            ->orderByDesc('payroll_periods.start_date')
+            ->orderByDesc('payroll_entries.id');
+
+        if (! empty($branchFilter) && is_numeric($branchFilter)) {
+            $reportsQuery->whereHas('payrollPeriod', fn ($q) => $q->where('branch_id', (int) $branchFilter));
+        }
+        if (in_array($statusFilter, ['draft', 'paid'], true)) {
+            $reportsQuery->where('status', $statusFilter);
+        }
+        if ($search !== '') {
+            $needle = '%'.$search.'%';
+            $reportsQuery->whereHas('employee', function ($q) use ($needle) {
+                $q->where('first_name', 'like', $needle)
+                  ->orWhere('last_name', 'like', $needle)
+                  ->orWhere('employee_code', 'like', $needle);
+            });
+        }
+
+        $reports = (clone $reportsQuery)->paginate(15)->withQueryString();
 
         $rules = PayrollRule::query()->get()->keyBy('branch_id');
 
-        return view('modules.payroll.index', compact('branches', 'employees', 'reports', 'rules'));
+        $monthStart = now()->startOfMonth()->toDateString();
+        $stats = [
+            'drafts' => PayrollEntry::where('status', 'draft')->count(),
+            'finalized_this_month' => PayrollEntry::where('status', 'paid')
+                ->whereDate('updated_at', '>=', $monthStart)
+                ->count(),
+            'paid_total_this_month' => (float) PayrollEntry::where('status', 'paid')
+                ->whereDate('updated_at', '>=', $monthStart)
+                ->sum('net_pay'),
+            'pending_total' => (float) PayrollEntry::where('status', 'draft')->sum('net_pay'),
+        ];
+
+        $filters = [
+            'search' => $search,
+            'branch_id' => $branchFilter,
+            'status' => $statusFilter,
+        ];
+
+        return view('modules.payroll.index', compact('branches', 'employees', 'reports', 'rules', 'stats', 'filters'));
     }
 
     public function show(Request $request, PayrollPeriod $payrollPeriod): View
@@ -83,13 +127,9 @@ class PayrollController extends Controller
             );
         }
 
-        $reportLabel = null;
-        if ($selectedEmployee) {
-            $startLabel = Carbon::parse($payrollPeriod->start_date)->format('M j');
-            $endLabel = Carbon::parse($payrollPeriod->end_date)->format('M j');
-            $reportLabel = trim($selectedEmployee->first_name.' '.$selectedEmployee->last_name)
-                .' ('.$startLabel.' - '.$endLabel.')';
-        }
+        $totalNet = (float) $entries->sum('net_pay');
+        $totalGross = (float) $entries->sum('gross_pay');
+        $totalDeductions = (float) $entries->sum('deductions');
 
         return view('modules.payroll.show', [
             'period' => $payrollPeriod,
@@ -99,7 +139,12 @@ class PayrollController extends Controller
             'summary' => $summary,
             'dailyBreakdown' => $dailyBreakdown,
             'rule' => $rule,
-            'reportLabel' => $reportLabel,
+            'totals' => [
+                'net' => $totalNet,
+                'gross' => $totalGross,
+                'deductions' => $totalDeductions,
+                'count' => $entries->count(),
+            ],
         ]);
     }
 
@@ -114,95 +159,52 @@ class PayrollController extends Controller
         $calculator = app(AttendanceSummaryCalculator::class);
         $employee = Employee::where('is_active', true)->findOrFail((int) $validated['employee_id']);
 
-        if ((float) ($employee->daily_rate ?? 0) <= 0) {
-            throw ValidationException::withMessages([
-                'employee_id' => 'Selected employee has no daily rate set. Please update the employee daily rate first.',
-            ]);
-        }
+        $this->guardEmployeeForGenerate($employee);
 
-        $startLabel = Carbon::parse($validated['start_date'])->format('M j');
-        $endLabel = Carbon::parse($validated['end_date'])->format('M j');
-        $cutoffLabel = trim($employee->first_name.' '.$employee->last_name).' ('.$startLabel.' - '.$endLabel.')';
-
-        DB::transaction(function () use ($validated, $employee, $calculator, $cutoffLabel): void {
-            $existingPeriod = PayrollPeriod::where('branch_id', $employee->branch_id)
-                ->whereDate('start_date', $validated['start_date'])
-                ->whereDate('end_date', $validated['end_date'])
-                ->first();
-
-            $period = $existingPeriod
-                ? tap($existingPeriod)->update([
-                    'cutoff_label' => $cutoffLabel,
-                    'status' => 'draft',
-                    'processed_at' => now(),
-                ])
-                : PayrollPeriod::create([
-                    'branch_id' => $employee->branch_id,
-                    'start_date' => $validated['start_date'],
-                    'end_date' => $validated['end_date'],
-                    'cutoff_label' => $cutoffLabel,
-                    'status' => 'draft',
-                    'processed_at' => now(),
-                ]);
-
-            $existingEntry = PayrollEntry::where('payroll_period_id', $period->id)
-                ->where('employee_id', $employee->id)
-                ->first();
-            if ($existingEntry && $existingEntry->status === 'paid') {
-                throw ValidationException::withMessages([
-                    'employee_id' => 'This employee payroll report is already finalized and locked.',
-                ]);
-            }
-
-            $rule = $this->resolveRules((int) $employee->branch_id);
-            $ruleValues = $rule->toArray();
-
-            $records = AttendanceRecord::where('employee_id', $employee->id)
-                ->whereDate('work_date', '>=', $validated['start_date'])
-                ->whereDate('work_date', '<=', $validated['end_date'])
-                ->get();
-
-            $summary = $calculator->summarizeForEmployee(
-                $employee,
-                $records,
-                $validated['start_date'],
-                $validated['end_date'],
-                $ruleValues
-            );
-
-            $regularHours = (float) $summary['regular_hours'];
-            $overtimeHours = (float) $summary['payable_overtime_hours'];
-
-            $hourlyRate = (float) ($summary['hourly_rate'] ?? 0);
-            $dailyRate = (float) ($summary['daily_rate'] ?? 0);
-            $grossPay = (float) $summary['estimated_gross_pay'];
-
-            $deductions = (float) $summary['estimated_deductions'];
-            $netPay = max(0, $grossPay - $deductions);
-
-            PayrollEntry::updateOrCreate(
-                [
-                    'payroll_period_id' => $period->id,
-                    'employee_id' => $employee->id,
-                ],
-                [
-                    'regular_hours' => round($regularHours, 2),
-                    'overtime_hours' => round($overtimeHours, 2),
-                    'hourly_rate' => $hourlyRate,
-                    'daily_rate' => round($dailyRate, 2),
-                    'gross_pay' => round($grossPay, 2),
-                    'deductions' => $deductions,
-                    'net_pay' => round($netPay, 2),
-                    'status' => 'draft',
-                    'notes' => 'Auto-generated from attendance summary. '
-                        .'Late: '.$summary['late_hours'].'h, '
-                        .'Absent days: '.$summary['absent_days'].', '
-                        .'Present days: '.$summary['present_days'],
-                ]
-            );
+        DB::transaction(function () use ($validated, $employee, $calculator): void {
+            $this->generateForEmployee($employee, $validated['start_date'], $validated['end_date'], $calculator);
         });
 
         return back()->with('success', 'Payroll period generated successfully.');
+    }
+
+    public function bulkGenerate(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'employee_ids' => ['required', 'array', 'min:1'],
+            'employee_ids.*' => ['integer', 'exists:employees,id'],
+            'start_date' => ['required', 'date'],
+            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+        ]);
+
+        $calculator = app(AttendanceSummaryCalculator::class);
+        $employees = Employee::where('is_active', true)
+            ->whereIn('id', $validated['employee_ids'])
+            ->get();
+
+        $skipped = [];
+        $generated = 0;
+
+        foreach ($employees as $employee) {
+            try {
+                $this->guardEmployeeForGenerate($employee);
+            } catch (ValidationException) {
+                $skipped[] = trim($employee->first_name.' '.$employee->last_name).' (no daily rate)';
+                continue;
+            }
+
+            DB::transaction(function () use ($employee, $validated, $calculator): void {
+                $this->generateForEmployee($employee, $validated['start_date'], $validated['end_date'], $calculator);
+            });
+            $generated++;
+        }
+
+        $message = "Generated {$generated} payroll report".($generated === 1 ? '' : 's').'.';
+        if (! empty($skipped)) {
+            $message .= ' Skipped: '.implode(', ', $skipped).'.';
+        }
+
+        return back()->with($generated > 0 ? 'success' : 'error', $message);
     }
 
     public function updateRules(Request $request): RedirectResponse
@@ -293,7 +295,6 @@ class PayrollController extends Controller
         DB::transaction(function () use ($payrollEntry, $period): void {
             $payrollEntry->delete();
 
-            // Keep data clean: remove empty draft period container after last employee report is deleted.
             $remainingReports = PayrollEntry::where('payroll_period_id', $period->id)->exists();
             if (! $remainingReports) {
                 $period->delete();
@@ -301,6 +302,92 @@ class PayrollController extends Controller
         });
 
         return back()->with('success', 'Payroll report deleted successfully.');
+    }
+
+    private function guardEmployeeForGenerate(Employee $employee): void
+    {
+        if ((float) ($employee->daily_rate ?? 0) <= 0) {
+            throw ValidationException::withMessages([
+                'employee_id' => 'Employee '.trim($employee->first_name.' '.$employee->last_name).' has no daily rate. Update it first.',
+            ]);
+        }
+    }
+
+    private function generateForEmployee(
+        Employee $employee,
+        string $startDate,
+        string $endDate,
+        AttendanceSummaryCalculator $calculator,
+    ): void {
+        $branchName = $employee->branch?->name ?? 'Branch '.$employee->branch_id;
+        $startLabel = Carbon::parse($startDate)->format('M j');
+        $endLabel = Carbon::parse($endDate)->format('M j');
+        $cutoffLabel = $startLabel.' – '.$endLabel.' · '.$branchName;
+
+        $existingPeriod = PayrollPeriod::where('branch_id', $employee->branch_id)
+            ->whereDate('start_date', $startDate)
+            ->whereDate('end_date', $endDate)
+            ->first();
+
+        $period = $existingPeriod
+            ? tap($existingPeriod)->update([
+                'cutoff_label' => $cutoffLabel,
+                'status' => 'draft',
+                'processed_at' => now(),
+            ])
+            : PayrollPeriod::create([
+                'branch_id' => $employee->branch_id,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'cutoff_label' => $cutoffLabel,
+                'status' => 'draft',
+                'processed_at' => now(),
+            ]);
+
+        $existingEntry = PayrollEntry::where('payroll_period_id', $period->id)
+            ->where('employee_id', $employee->id)
+            ->first();
+        if ($existingEntry && $existingEntry->status === 'paid') {
+            throw ValidationException::withMessages([
+                'employee_id' => 'Employee '.trim($employee->first_name.' '.$employee->last_name).' already has a finalized report for this period.',
+            ]);
+        }
+
+        $rule = $this->resolveRules((int) $employee->branch_id);
+        $ruleValues = $rule->toArray();
+
+        $records = AttendanceRecord::where('employee_id', $employee->id)
+            ->whereDate('work_date', '>=', $startDate)
+            ->whereDate('work_date', '<=', $endDate)
+            ->get();
+
+        $summary = $calculator->summarizeForEmployee($employee, $records, $startDate, $endDate, $ruleValues);
+
+        $regularHours = (float) $summary['regular_hours'];
+        $overtimeHours = (float) $summary['payable_overtime_hours'];
+        $hourlyRate = (float) ($summary['hourly_rate'] ?? 0);
+        $dailyRate = (float) ($summary['daily_rate'] ?? 0);
+        $grossPay = (float) $summary['estimated_gross_pay'];
+        $deductions = (float) $summary['estimated_deductions'];
+        $netPay = max(0, $grossPay - $deductions);
+
+        PayrollEntry::updateOrCreate(
+            [
+                'payroll_period_id' => $period->id,
+                'employee_id' => $employee->id,
+            ],
+            [
+                'regular_hours' => round($regularHours, 2),
+                'overtime_hours' => round($overtimeHours, 2),
+                'hourly_rate' => $hourlyRate,
+                'daily_rate' => round($dailyRate, 2),
+                'gross_pay' => round($grossPay, 2),
+                'deductions' => $deductions,
+                'net_pay' => round($netPay, 2),
+                'status' => 'draft',
+                'notes' => 'Auto-generated from attendance summary. Late: '.$summary['late_hours'].'h, Absent days: '.$summary['absent_days'].', Present days: '.$summary['present_days'],
+            ]
+        );
     }
 
     private function resolveRules(int $branchId): PayrollRule

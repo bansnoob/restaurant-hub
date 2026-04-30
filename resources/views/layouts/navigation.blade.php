@@ -98,6 +98,14 @@
                 <span class="rh-nav-label">Inventory</span>
             </a>
 
+            <a href="{{ route('day-closures.index') }}"
+               class="rh-nav-link {{ request()->routeIs('day-closures.*') ? 'rh-nav-link--active' : '' }}">
+                <svg class="rh-nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="4" width="16" height="13" rx="1.5"/>
+                    <path d="M2 8h16M6 12h2m4 0h2"/>
+                </svg>
+                <span class="rh-nav-label">Cash Report</span>
+            </a>
 
         </nav>
 

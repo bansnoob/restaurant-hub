@@ -55,7 +55,71 @@
             </div>
         </section>
 
-        <hr class="rh-section-divider">
+        {{-- COMBO SPOTLIGHT --}}
+        <div class="rn-combo">
+            <div class="rn-combo-inner">
+                <div>
+                    <p class="rn-combo-eyebrow">The Main Event</p>
+                    <div class="rn-combo-rule"></div>
+                    <h2 class="rn-combo-heading">Unlimited Chicken Wings<br>+ Unli Rice</h2>
+                    <p style="font-family: var(--rh-font-sans); font-size: 0.85rem; color: rgba(255,255,255,0.45); line-height: 1.7; max-width: 360px; margin-top: 0.75rem;">
+                        Add it to any ramen bowl. Wings keep coming — all 8 flavors, cooked fresh per batch — until you say stop.
+                    </p>
+                    <div class="rn-combo-price-row">
+                        <span class="rn-combo-price">₱199</span>
+                        <span class="rn-combo-price-label">per person<br>unlimited wings + unli rice</span>
+                    </div>
+                </div>
+                <div class="rn-combo-right">
+                    <p class="rn-combo-flavors-label">8 Wing Flavors</p>
+                    <div class="rn-combo-flavors">
+                        <span class="rn-flavor-tag">Sweet Chili</span>
+                        <span class="rn-flavor-tag">Honey Butter</span>
+                        <span class="rn-flavor-tag">Buffalo</span>
+                        <span class="rn-flavor-tag">Barbeque</span>
+                        <span class="rn-flavor-tag">Teriyaki</span>
+                        <span class="rn-flavor-tag">Sweet &amp; Sour</span>
+                        <span class="rn-flavor-tag">Yangyeom</span>
+                        <span class="rn-flavor-tag">Garlic Parmesan</span>
+                    </div>
+                    <p class="rn-combo-note">
+                        Unlimited drinks available separately — ₱150 for 5 persons or ₱80 per pitcher.
+                        Strictly no leftovers — leftover chicken is charged at ₱25 per piece.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        {{-- HOW IT WORKS --}}
+        <div class="rn-how">
+            <p class="rh-section-eyebrow">How It Works</p>
+            <div class="rh-section-rule"></div>
+            <h2 class="rh-section-heading">Your Visit, Explained</h2>
+            <div class="rn-how-grid">
+                <div class="rn-step">
+                    <span class="rn-step-num">01</span>
+                    <div class="rn-step-body">
+                        <p class="rn-step-title">Choose your ramen bowl</p>
+                        <p class="rn-step-desc">Pick from 5 regular bowls or go for a Naijiro Special. Add toppings as you like.</p>
+                    </div>
+                </div>
+                <div class="rn-step">
+                    <span class="rn-step-num">02</span>
+                    <div class="rn-step-body">
+                        <p class="rn-step-title">Add unlimited wings &amp; rice</p>
+                        <p class="rn-step-desc">₱199 per person. Wings are cooked fresh in batches — order by flavor, as many rounds as you want.</p>
+                        <span class="rn-step-callout">₱199 / person</span>
+                    </div>
+                </div>
+                <div class="rn-step">
+                    <span class="rn-step-num">03</span>
+                    <div class="rn-step-body">
+                        <p class="rn-step-title">90-minute session</p>
+                        <p class="rn-step-desc">Each visit is 90 minutes from first order. Last order at 9:15 PM. Please only order what you can finish — leftover chicken is charged at ₱25 per piece.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         {{-- MENU --}}
         <div class="rh-menu-intro">
@@ -63,9 +127,8 @@
             <div class="rh-section-rule"></div>
             <h2 class="rh-section-heading">The Menu</h2>
             <p class="rh-section-body">
-                Choose from 5 regular ramen bowls or go for one of our Naijiro specials. Pair your bowl with
-                unlimited chicken wings and unli rice at ₱199 — available in 8 flavor sauces. Add extras to
-                your bowl as you please.
+                Five regular ramen bowls and three Naijiro specials. Pair any bowl with unlimited wings and unli rice.
+                Add extras to your bowl as you please.
             </p>
         </div>
 
@@ -114,104 +177,52 @@
 
                 <div class="rh-menu-category">
                     <p class="rh-menu-category-name">Extras</p>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-name">Wakame</p>
-                        </div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-name">Kikurage</p>
-                        </div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-name">Salted Seaweeds</p>
-                        </div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-name">Tamago Egg</p>
-                        </div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-name">Noodles</p>
-                        </div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-name">Chashu Pork</p>
-                        </div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-name">Kimchi</p>
-                        </div>
-                    </div>
+                    <div class="rh-menu-item"><div class="rh-menu-item-left"><p class="rh-menu-item-name">Wakame</p></div></div>
+                    <div class="rh-menu-item"><div class="rh-menu-item-left"><p class="rh-menu-item-name">Kikurage</p></div></div>
+                    <div class="rh-menu-item"><div class="rh-menu-item-left"><p class="rh-menu-item-name">Salted Seaweeds</p></div></div>
+                    <div class="rh-menu-item"><div class="rh-menu-item-left"><p class="rh-menu-item-name">Tamago Egg</p></div></div>
+                    <div class="rh-menu-item"><div class="rh-menu-item-left"><p class="rh-menu-item-name">Noodles</p></div></div>
+                    <div class="rh-menu-item"><div class="rh-menu-item-left"><p class="rh-menu-item-name">Chashu Pork</p></div></div>
+                    <div class="rh-menu-item"><div class="rh-menu-item-left"><p class="rh-menu-item-name">Kimchi</p></div></div>
                 </div>
             </div>
 
             {{-- Right column --}}
             <div>
-                <div class="rh-menu-category">
-                    <p class="rh-menu-category-name">Naijiro Special Ramen</p>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-name">Naijiro Red Ramen</p>
-                            <p class="rh-menu-item-desc">Spicy red broth with chashu pork, tamago egg, kikurage, wakame and salted seaweed</p>
+                {{-- Naijiro Specials — card treatment --}}
+                <div>
+                    <p class="rh-menu-category-name" style="margin-bottom: 1rem;">Naijiro Special Ramen</p>
+                    <div class="rn-specials-grid">
+                        <div class="rn-special-card">
+                            <div>
+                                <p class="rn-special-badge">Naijiro Special</p>
+                                <p class="rn-special-name">Naijiro Red Ramen</p>
+                                <p class="rn-special-desc">Spicy red broth with chashu pork, tamago egg, kikurage, wakame and salted seaweed</p>
+                            </div>
+                            <span class="rn-special-price">₱299</span>
                         </div>
-                        <span class="rh-menu-item-price">₱299</span>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-name">Curry Ramen</p>
-                            <p class="rh-menu-item-desc">Aromatic curry-flavored broth with chicken katsu, tamago egg, kikurage, wakame and salted seaweed</p>
+                        <div class="rn-special-card">
+                            <div>
+                                <p class="rn-special-badge">Naijiro Special</p>
+                                <p class="rn-special-name">Curry Ramen</p>
+                                <p class="rn-special-desc">Aromatic curry-flavored broth with chicken katsu, tamago egg, kikurage, wakame and salted seaweed</p>
+                            </div>
+                            <span class="rn-special-price">₱279</span>
                         </div>
-                        <span class="rh-menu-item-price">₱279</span>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-name">Super Chashu Tantanmen Ramen</p>
-                            <p class="rh-menu-item-desc">A rich and creamy broth with chashu pork, tamago egg, kikurage, wakame and salted seaweed</p>
+                        <div class="rn-special-card">
+                            <div>
+                                <p class="rn-special-badge">Naijiro Special</p>
+                                <p class="rn-special-name">Super Chashu Tantanmen</p>
+                                <p class="rn-special-desc">A rich and creamy broth with chashu pork, tamago egg, kikurage, wakame and salted seaweed</p>
+                            </div>
+                            <span class="rn-special-price">₱289</span>
                         </div>
-                        <span class="rh-menu-item-price">₱289</span>
                     </div>
                 </div>
 
                 <div class="rh-menu-category" style="margin-top: 3.5rem;">
-                    <p class="rh-menu-category-name">Unlimited Chicken Wings + Unli Rice</p>
-                    <div class="rh-menu-item" style="margin-bottom: 0.25rem;">
-                        <div class="rh-menu-item-left">
-                            <p class="rh-menu-item-desc">8 flavor sauces to choose from — eat as much as you want</p>
-                        </div>
-                        <span class="rh-menu-item-price">₱199</span>
-                    </div>
+                    <p class="rh-menu-category-name">Drinks</p>
                     <div class="rh-menu-item">
-                        <div class="rh-menu-item-left"><p class="rh-menu-item-name">Sweet Chili</p></div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left"><p class="rh-menu-item-name">Honey Butter</p></div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left"><p class="rh-menu-item-name">Buffalo Wings</p></div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left"><p class="rh-menu-item-name">Barbeque</p></div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left"><p class="rh-menu-item-name">Teriyaki</p></div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left"><p class="rh-menu-item-name">Sweet &amp; Sour</p></div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left"><p class="rh-menu-item-name">Yangyeom</p></div>
-                    </div>
-                    <div class="rh-menu-item">
-                        <div class="rh-menu-item-left"><p class="rh-menu-item-name">Garlic Parmesan <span style="font-weight:400;">(with cheese)</span></p></div>
-                    </div>
-                    <div class="rh-menu-item" style="margin-top: 1rem; border-top: 1px solid rgba(0,0,0,0.08); padding-top: 1rem;">
                         <div class="rh-menu-item-left">
                             <p class="rh-menu-item-name">Unlimited Drinks</p>
                             <p class="rh-menu-item-desc">Good for 5 persons</p>
@@ -224,13 +235,6 @@
                         </div>
                         <span class="rh-menu-item-price">₱80</span>
                     </div>
-                    <div class="rh-menu-note" style="margin-top: 1rem;">
-                        Strictly no leftovers policy — leftover chicken is charged at ₱25 per piece. Please order only what you can finish.
-                    </div>
-                </div>
-
-                <div class="rh-menu-category" style="margin-top: 3.5rem;">
-                    <p class="rh-menu-category-name">Drinks</p>
                     <div class="rh-menu-item">
                         <div class="rh-menu-item-left">
                             <p class="rh-menu-item-name">Ramune Soda</p>

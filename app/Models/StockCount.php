@@ -5,29 +5,24 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Expense extends Model
+class StockCount extends Model
 {
     use HasFactory;
 
     protected $fillable = [
         'branch_id',
-        'expense_category_id',
+        'counted_at',
         'recorded_by_user_id',
-        'expense_date',
-        'reference_no',
-        'vendor_name',
-        'description',
-        'amount',
-        'payment_method',
-        'status',
         'notes',
+        'total_value',
     ];
 
-    public function category(): BelongsTo
-    {
-        return $this->belongsTo(ExpenseCategory::class, 'expense_category_id');
-    }
+    protected $casts = [
+        'counted_at' => 'date',
+        'total_value' => 'decimal:2',
+    ];
 
     public function branch(): BelongsTo
     {
@@ -37,5 +32,10 @@ class Expense extends Model
     public function recordedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by_user_id');
+    }
+
+    public function entries(): HasMany
+    {
+        return $this->hasMany(StockCountEntry::class);
     }
 }
