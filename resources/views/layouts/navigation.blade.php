@@ -107,6 +107,17 @@
                 <span class="rh-nav-label">Cash Report</span>
             </a>
 
+            @role('owner')
+            <a href="{{ route('branches.index') }}"
+               class="rh-nav-link {{ request()->routeIs('branches.*') ? 'rh-nav-link--active' : '' }}">
+                <svg class="rh-nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 17V8l7-5 7 5v9"/>
+                    <path d="M9 17v-5h2v5"/>
+                </svg>
+                <span class="rh-nav-label">Branches</span>
+            </a>
+            @endrole
+
         </nav>
 
         {{-- Theme toggle --}}

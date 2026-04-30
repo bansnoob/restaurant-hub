@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\BranchController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DayClosureController;
 use App\Http\Controllers\EmployeeController;
@@ -28,6 +29,23 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // Branches (owner-only)
+    Route::get('/branches', [BranchController::class, 'index'])
+        ->middleware('role:owner')
+        ->name('branches.index');
+    Route::post('/branches', [BranchController::class, 'store'])
+        ->middleware('role:owner')
+        ->name('branches.store');
+    Route::put('/branches/{branch}', [BranchController::class, 'update'])
+        ->middleware('role:owner')
+        ->name('branches.update');
+    Route::delete('/branches/{branch}', [BranchController::class, 'destroy'])
+        ->middleware('role:owner')
+        ->name('branches.destroy');
+    Route::post('/branches/{branch}/assign-to-me', [BranchController::class, 'assignToMe'])
+        ->middleware('role:owner')
+        ->name('branches.assign-to-me');
 
     Route::get('/attendance', [AttendanceController::class, 'index'])
         ->middleware('role:owner|cashier')
