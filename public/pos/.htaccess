@@ -1,0 +1,36 @@
+# SM Restaurant Hub PWA — Apache config (scoped to /pos only).
+#
+# These directives apply ONLY to this directory, so the rest of the site is
+# unaffected. expo-sqlite's web worker needs cross-origin isolation, which
+# requires COOP + COEP; applying them site-wide could break pages that embed
+# cross-origin resources, hence the per-directory scope.
+
+<IfModule mod_headers.c>
+    Header set Cross-Origin-Opener-Policy "same-origin"
+    Header set Cross-Origin-Embedder-Policy "require-corp"
+    Header set Cross-Origin-Resource-Policy "same-origin"
+</IfModule>
+
+# Correct MIME type for the SQLite WASM module (older Apache doesn't know it).
+<IfModule mod_mime.c>
+    AddType application/wasm .wasm
+</IfModule>
+
+# The service worker must be allowed to control the whole /pos/ scope.
+<IfModule mod_headers.c>
+    <Files "sw.js">
+        Header set Service-Worker-Allowed "/pos/"
+        # Never let the SW script itself be stale.
+        Header set Cache-Control "no-cache"
+    </Files>
+</IfModule>
+
+# Client-side routing: serve index.html for any /pos path that isn't a real
+# file or directory (so deep links / refreshes on sub-routes work).
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /pos/
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.html [L]
+</IfModule>
