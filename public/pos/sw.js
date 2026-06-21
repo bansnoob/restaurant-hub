@@ -12,7 +12,7 @@
  * Mount-agnostic: BASE is derived from this script's own location, so the same
  * file works whether served at /sw.js or /pos/sw.js.
  */
-const CACHE = 'rhub-shell-v1';
+const CACHE = 'rhub-shell-v2';
 
 // e.g. "/pos/sw.js" -> "/pos" ; "/sw.js" -> ""
 const BASE = self.location.pathname.replace(/\/sw\.js$/, '');
