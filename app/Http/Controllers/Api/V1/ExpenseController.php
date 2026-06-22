@@ -81,6 +81,44 @@ class ExpenseController extends Controller
             ->setStatusCode(201);
     }
 
+    public function update(Request $request, Expense $expense): JsonResponse
+    {
+        $this->authorizeBranch($request, $expense);
+
+        abort_if($expense->status === 'voided', 422, 'Voided expenses cannot be edited.');
+
+        // Partial update: only the keys actually present in the request are
+        // changed, so a client editing a subset of fields (e.g. just the
+        // description/amount/payment method) does not wipe the others.
+        $validated = $request->validate([
+            'expense_category_id' => ['sometimes', 'nullable', 'integer', 'exists:expense_categories,id'],
+            'expense_date' => ['sometimes', 'required', 'date'],
+            'reference_no' => ['sometimes', 'nullable', 'string', 'max:60'],
+            'vendor_name' => ['sometimes', 'nullable', 'string', 'max:140'],
+            'description' => ['sometimes', 'required', 'string', 'max:200'],
+            'amount' => ['sometimes', 'required', 'numeric', 'min:0.01'],
+            'payment_method' => ['sometimes', 'required', 'in:cash,bank_transfer,gcash,other'],
+            'notes' => ['sometimes', 'nullable', 'string', 'max:2000'],
+        ]);
+
+        $expense->update($validated);
+
+        return (new ExpenseResource($expense->load('category')))
+            ->response()
+            ->setStatusCode(200);
+    }
+
+    public function destroy(Request $request, Expense $expense): JsonResponse
+    {
+        $this->authorizeBranch($request, $expense);
+
+        abort_if($expense->status === 'voided', 422, 'Voided expenses cannot be deleted.');
+
+        $expense->delete();
+
+        return response()->json(['message' => 'Expense deleted.']);
+    }
+
     public function categories(Request $request): AnonymousResourceCollection
     {
         $branchId = $this->resolveBranchId($request);
@@ -93,6 +131,27 @@ class ExpenseController extends Controller
             ->get();
 
         return ExpenseCategoryResource::collection($categories);
+    }
+
+    /**
+     * Ensure the caller may mutate this expense. Owners may touch any branch;
+     * everyone else is restricted to their own branch's expenses.
+     */
+    private function authorizeBranch(Request $request, Expense $expense): void
+    {
+        $user = $request->user();
+
+        if ($user->hasRole('owner')) {
+            return;
+        }
+
+        $branchId = $user->resolveBranchId();
+        abort_unless($branchId, 403, 'User is not linked to any branch.');
+        abort_unless(
+            $expense->branch_id === $branchId,
+            403,
+            'You cannot modify an expense from another branch.'
+        );
     }
 
     private function resolveBranchId(Request $request): int

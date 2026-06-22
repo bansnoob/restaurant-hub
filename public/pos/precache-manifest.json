@@ -1,9 +1,9 @@
 {
-  "version": 1782062559698,
+  "version": 1782121126446,
   "urls": [
     "/pos/",
-    "/pos/_expo/static/js/web/entry-b011f99eab558be828c3298124de8f99.js",
-    "/pos/_expo/static/js/web/worker-13a407ff308f0c05d2ea1ff5d77887f0.js",
+    "/pos/_expo/static/js/web/entry-fbc63319a832d1396df3c5a2d005ce0e.js",
+    "/pos/_expo/static/js/web/worker-dbdc97d892a615e681d8111616f8f440.js",
     "/pos/apple-touch-icon.png",
     "/pos/assets/node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/AntDesign.3f78af31cca60105799838a1a7a59fbd.ttf",
     "/pos/assets/node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Entypo.31b5ffea3daddc69dd01a1f3d6cf63c5.ttf",
