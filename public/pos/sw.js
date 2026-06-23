@@ -1,9 +1,9 @@
 /* Service worker for the SM Restaurant Hub PWA.
  *
- * Goal: let the installed app launch with no network by caching the app
- * shell (index.html + the hashed JS/WASM/font assets Metro emits). The
- * app's *data* is already offline-first via SQLite + the sync queue, so the
- * worker deliberately never caches API traffic — it only handles the shell.
+ * Goal: let the installed app launch quickly by caching the app shell
+ * (index.html + the hashed JS/WASM/font assets Metro emits). The app is
+ * online-first — its data comes straight from the API — so the worker
+ * deliberately never caches API traffic; it only handles the shell.
  *
  * Cached same-origin responses retain their COOP/COEP/CORP headers, so
  * cross-origin isolation (required by expo-sqlite's web worker) survives an
@@ -12,7 +12,7 @@
  * Mount-agnostic: BASE is derived from this script's own location, so the same
  * file works whether served at /sw.js or /pos/sw.js.
  */
-const CACHE = 'rhub-shell-v4';
+const CACHE = 'rhub-shell-v5';
 
 // e.g. "/pos/sw.js" -> "/pos" ; "/sw.js" -> ""
 const BASE = self.location.pathname.replace(/\/sw\.js$/, '');
