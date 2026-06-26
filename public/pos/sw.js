@@ -12,10 +12,11 @@
  * Mount-agnostic: BASE is derived from this script's own location, so the same
  * file works whether served at /sw.js or /pos/sw.js.
  *
- * NOTE: this file is overwritten from restaurant-hub-mobile/public/sw.js on
- * each web build — bump `CACHE` in that source, not here.
+ * Bump `CACHE` on every deploy so controlled clients re-precache the new shell.
+ * This is the SOURCE of truth — the hub's public/pos/sw.js is overwritten from
+ * here on each web build, so bump it HERE.
  */
-const CACHE = 'rhub-shell-v6';
+const CACHE = 'rhub-shell-v7';
 
 // e.g. "/pos/sw.js" -> "/pos" ; "/sw.js" -> ""
 const BASE = self.location.pathname.replace(/\/sw\.js$/, '');
