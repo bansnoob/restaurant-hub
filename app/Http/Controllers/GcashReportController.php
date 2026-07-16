@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\Branch;
+use App\Models\DayClosure;
 use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\Sale;
+use App\Services\SaleService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\View\View;
@@ -58,7 +62,9 @@ class GcashReportController extends Controller
 
         return view('modules.gcash_report.index', [
             'branches' => Branch::where('is_active', true)->orderBy('name')->get(),
+            'categories' => ExpenseCategory::where('is_active', true)->orderBy('name')->get(),
             'sales' => $sales,
+            'expenses' => $this->paginateExpenses($branchId, $dateFrom, $dateTo),
             'totals' => $totals,
             'filters' => [
                 'branch_id' => $branchId,
@@ -71,6 +77,160 @@ class GcashReportController extends Controller
                 'date_to' => $this->defaultDateTo(),
             ],
         ]);
+    }
+
+    /**
+     * Record GCash income that never went through the POS.
+     *
+     * Written to `sales` as a completed GCash sale so it counts everywhere GCash revenue
+     * counts — the Sales page and the day-closure GCash total — rather than living in a
+     * parallel ledger the rest of the app cannot see.
+     */
+    public function store(Request $request, SaleService $sales): RedirectResponse
+    {
+        $validated = $request->validate($this->recordRules());
+
+        if ($blocked = $this->dayClosedResponse((int) $validated['branch_id'], $validated['sale_date'])) {
+            return $blocked;
+        }
+
+        $date = Carbon::parse($validated['sale_date']);
+
+        Sale::create([
+            'branch_id' => (int) $validated['branch_id'],
+            'order_number' => $sales->generateOrderNumber(
+                (int) $validated['branch_id'],
+                $date->toDateString(),
+                Sale::MANUAL_GCASH_PREFIX
+            ),
+            // Keep the clock time when the record is for today so it sorts naturally
+            // against POS sales; a backdated record lands at the end of its own day.
+            'sale_datetime' => $date->isToday() ? now() : $date->copy()->endOfDay(),
+            'cashier_user_id' => $request->user()->id,
+            'order_type' => 'dine_in',
+            'status' => 'completed',
+            'sub_total' => $validated['amount'],
+            'discount_total' => 0,
+            'tax_total' => 0,
+            'grand_total' => $validated['amount'],
+            'paid_total' => $validated['amount'],
+            'change_total' => 0,
+            'payment_method' => 'gcash',
+            'gcash_amount' => $validated['amount'],
+            'notes' => $validated['description'],
+            'closed_at' => now(),
+        ]);
+
+        return back()->with('success', 'GCash record added.');
+    }
+
+    public function update(Request $request, Sale $sale, SaleService $sales): RedirectResponse
+    {
+        if ($blocked = $this->guardManualRecord($sale)) {
+            return $blocked;
+        }
+
+        $validated = $request->validate($this->recordRules());
+
+        // Both the day it is leaving and the day it is landing on must still be open.
+        foreach ([$sale->sale_datetime?->toDateString(), $validated['sale_date']] as $date) {
+            if ($date && ($blocked = $this->dayClosedResponse((int) $sale->branch_id, $date))) {
+                return $blocked;
+            }
+        }
+        if ($blocked = $this->dayClosedResponse((int) $validated['branch_id'], $validated['sale_date'])) {
+            return $blocked;
+        }
+
+        $date = Carbon::parse($validated['sale_date']);
+        $movedDay = $sale->sale_datetime?->toDateString() !== $date->toDateString();
+        $movedBranch = (int) $sale->branch_id !== (int) $validated['branch_id'];
+
+        $sale->update([
+            'branch_id' => (int) $validated['branch_id'],
+            // Re-issue the number if it moved, so it stays unique within its new branch/day.
+            'order_number' => ($movedDay || $movedBranch)
+                ? $sales->generateOrderNumber((int) $validated['branch_id'], $date->toDateString(), Sale::MANUAL_GCASH_PREFIX)
+                : $sale->order_number,
+            'sale_datetime' => $movedDay ? $date->copy()->endOfDay() : $sale->sale_datetime,
+            'sub_total' => $validated['amount'],
+            'grand_total' => $validated['amount'],
+            'paid_total' => $validated['amount'],
+            'gcash_amount' => $validated['amount'],
+            'notes' => $validated['description'],
+        ]);
+
+        return back()->with('success', 'GCash record updated.');
+    }
+
+    public function destroy(Sale $sale): RedirectResponse
+    {
+        if ($blocked = $this->guardManualRecord($sale)) {
+            return $blocked;
+        }
+
+        if ($blocked = $this->dayClosedResponse((int) $sale->branch_id, $sale->sale_datetime?->toDateString())) {
+            return $blocked;
+        }
+
+        $sale->delete();
+
+        return back()->with('success', 'GCash record deleted.');
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private function recordRules(): array
+    {
+        return [
+            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'sale_date' => ['required', 'date'],
+            // `decimal:0,2` because the money columns hold 2 places: without it 100.999 is
+            // accepted, then rounds to 101.00 for display while the total still sums the
+            // unrounded value — so the column would not add up to the tile above it.
+            // max keeps it inside sales.gcash_amount, the narrowest column at decimal(10,2).
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'min:0.01', 'max:9999999.99'],
+            'description' => ['required', 'string', 'max:2000'],
+        ];
+    }
+
+    /**
+     * Only hand-entered records may be touched here. A POS sale's grand_total is the sum of
+     * its sale_items, so rewriting it from a report would leave the two disagreeing.
+     */
+    private function guardManualRecord(Sale $sale): ?RedirectResponse
+    {
+        if (! $sale->isManualGcashRecord()) {
+            return back()->with('error', 'Only manually added GCash records can be edited here. POS orders are managed from the POS.');
+        }
+
+        return null;
+    }
+
+    /**
+     * A day closure stores gcash_sales_total as a snapshot taken at closing time. Changing a
+     * sale afterwards would leave that snapshot stale and make this report disagree with the
+     * Cash Report, so the day must be reopened first.
+     */
+    private function dayClosedResponse(int $branchId, ?string $date): ?RedirectResponse
+    {
+        if (! $date) {
+            return null;
+        }
+
+        $closed = DayClosure::where('branch_id', $branchId)
+            ->whereDate('closed_at_date', $date)
+            ->exists();
+
+        if (! $closed) {
+            return null;
+        }
+
+        return back()->with('error', sprintf(
+            'The day %s is already closed for this branch. Reopen it on the Cash Report before changing GCash records.',
+            Carbon::parse($date)->format('M j, Y')
+        ));
     }
 
     /**
@@ -115,6 +275,21 @@ class GcashReportController extends Controller
             ->orderByDesc('sales.sale_datetime')
             ->orderByDesc('sales.id')
             ->paginate(self::PER_PAGE)
+            ->withQueryString();
+    }
+
+    /**
+     * Paginated under its own page name so it does not fight the sales table over `?page=`.
+     *
+     * @return LengthAwarePaginator<int, Expense>
+     */
+    private function paginateExpenses(?int $branchId, string $dateFrom, string $dateTo): LengthAwarePaginator
+    {
+        return $this->expensesQuery($branchId, $dateFrom, $dateTo)
+            ->with(['branch:id,name', 'category:id,name'])
+            ->orderByDesc('expense_date')
+            ->orderByDesc('id')
+            ->paginate(self::PER_PAGE, ['*'], 'expense_page')
             ->withQueryString();
     }
 

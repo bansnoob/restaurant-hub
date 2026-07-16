@@ -137,6 +137,18 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:owner')
         ->name('gcash-report.index');
 
+    // Manually recorded GCash income (stored as completed GCash sales). GCash expenses reuse
+    // the expenses.* routes below rather than growing a second way to create an expense.
+    Route::post('/gcash-report/records', [GcashReportController::class, 'store'])
+        ->middleware('role:owner')
+        ->name('gcash-report.records.store');
+    Route::put('/gcash-report/records/{sale}', [GcashReportController::class, 'update'])
+        ->middleware('role:owner')
+        ->name('gcash-report.records.update');
+    Route::delete('/gcash-report/records/{sale}', [GcashReportController::class, 'destroy'])
+        ->middleware('role:owner')
+        ->name('gcash-report.records.destroy');
+
     Route::get('/expenses', [ExpenseController::class, 'index'])
         ->middleware('role:owner')
         ->name('expenses.index');

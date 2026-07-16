@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\MenuItem;
 use App\Models\Sale;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class SaleService
@@ -121,22 +122,42 @@ class SaleService
         return $sale;
     }
 
-    private function generateOrderNumber(int $branchId): string
+    /**
+     * Build the next order number for a branch on a given day.
+     *
+     * The sequence is scoped to its own prefix. Other features (the GCash report's manual
+     * records) write differently-prefixed rows to the same branch and day, and the lookup
+     * takes the last row by id regardless of prefix — so without this filter the two share
+     * one running sequence and POS numbers skip (…-0002 then …-0004) whenever a manual
+     * record lands between two orders. That reads as a missing or voided order on a receipt.
+     *
+     * It does not risk a duplicate: the sequence always increments from the newest row, so
+     * unique(branch_id, order_number) still holds either way. For POS-only data every
+     * same-day row already shares this prefix, so the filter changes nothing.
+     */
+    public function generateOrderNumber(int $branchId, ?string $date = null, ?string $prefixOverride = null): string
     {
-        $branch = Branch::find($branchId);
-        $prefix = $branch ? $branch->code : 'ORD';
-        $date = now()->format('Ymd');
+        $date = $date ?: now()->toDateString();
+        $stamp = Carbon::parse($date)->format('Ymd');
 
-        $lastOrder = Sale::where('branch_id', $branchId)
-            ->whereDate('sale_datetime', now()->toDateString())
-            ->orderByDesc('id')
-            ->first();
+        $prefix = $prefixOverride ?: (Branch::find($branchId)?->code ?: 'ORD');
 
-        $sequence = 1;
-        if ($lastOrder && preg_match('/-(\d+)$/', $lastOrder->order_number, $matches)) {
-            $sequence = ((int) $matches[1]) + 1;
-        }
+        // branches.code is only validated as a string, so it may contain LIKE wildcards.
+        // `!` as the escape character: MySQL and SQLite disagree on backslashes in literals.
+        $pattern = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $prefix.'-'.$stamp.'-').'%';
 
-        return sprintf('%s-%s-%04d', $prefix, $date, $sequence);
+        // Take the highest sequence in use, not the newest row. Order numbers can be
+        // re-issued (the GCash report re-numbers a record moved to another branch or day), so
+        // the newest row is not necessarily the highest-numbered one — and continuing from it
+        // would re-issue a number already taken, which unique(branch_id, order_number) then
+        // rejects, permanently wedging new records for that branch and day.
+        $highest = Sale::where('branch_id', $branchId)
+            ->whereDate('sale_datetime', $date)
+            ->whereRaw("order_number LIKE ? ESCAPE '!'", [$pattern])
+            ->pluck('order_number')
+            ->map(fn ($number) => preg_match('/-(\d+)$/', (string) $number, $matches) ? (int) $matches[1] : 0)
+            ->max();
+
+        return sprintf('%s-%s-%04d', $prefix, $stamp, ((int) $highest) + 1);
     }
 }

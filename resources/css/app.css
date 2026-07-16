@@ -8027,6 +8027,67 @@ select.rm-input {
 .rh-cash-variance-pill--over  { background: var(--rh-amber-bg); color: var(--rh-amber-text); }
 
 
+/* GCash report — section headings and row actions.
+   Tokens only, so light and dark both resolve. */
+.rh-pay-section-title {
+    font-family: var(--rh-font-mono);
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--rh-text-muted);
+    margin: 2rem 0 0.75rem;
+}
+
+.rh-gcash-row-actions {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
+
+.rh-gcash-link {
+    font-family: var(--rh-font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    color: var(--rh-text-muted);
+    background: transparent;
+    border: 1px solid var(--rh-border);
+    padding: 0.3rem 0.6rem;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.rh-gcash-link:hover {
+    color: var(--rh-accent);
+    border-color: var(--rh-accent);
+}
+
+.rh-gcash-link--danger:hover {
+    color: var(--rh-error-text);
+    border-color: var(--rh-error-border);
+}
+
+.rh-gcash-muted {
+    font-family: var(--rh-font-mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.08em;
+    color: var(--rh-text-muted);
+}
+
+.rh-gcash-hint {
+    font-family: var(--rh-font-sans);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--rh-text-muted);
+    background: var(--rh-surface-2);
+    border: 1px solid var(--rh-border);
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 1rem;
+}
+
+
 /* ============================================================
    DASHBOARD REBUILD — additional rh-dash-* components
    ============================================================ */

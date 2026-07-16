@@ -23,6 +23,25 @@ class Sale extends Model
      */
     public const GCASH_AMOUNT_SQL = "CASE WHEN sales.payment_method = 'gcash' THEN sales.grand_total ELSE COALESCE(sales.gcash_amount, 0) END";
 
+    /**
+     * Order-number prefix marking a GCash record entered by hand on the GCash report rather
+     * than rung up on the POS. A prefix rather than a column so this needs no migration, and
+     * it is server-generated, so it cannot be spoofed through the form.
+     *
+     * Manual records are the only sales this report may edit or delete: a POS sale's
+     * grand_total is the sum of its sale_items, so editing it from a report would desync the
+     * two.
+     */
+    public const MANUAL_GCASH_PREFIX = 'GCASH';
+
+    /**
+     * Was this row entered by hand on the GCash report (rather than by the POS)?
+     */
+    public function isManualGcashRecord(): bool
+    {
+        return str_starts_with((string) $this->order_number, self::MANUAL_GCASH_PREFIX.'-');
+    }
+
     protected $fillable = [
         'branch_id',
         'order_number',
