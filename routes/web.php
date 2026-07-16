@@ -6,6 +6,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DayClosureController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\GcashReportController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\PayrollController;
@@ -127,6 +128,14 @@ Route::middleware('auth')->group(function () {
     Route::delete('/day-close/{dayClosure}', [DayClosureController::class, 'destroy'])
         ->middleware('role:owner')
         ->name('day-close.destroy');
+
+    // GCash report (read-only, built from individual GCash sales).
+    // Owner-only: this exposes per-transaction sales rows and expense totals, the same class
+    // of data /sales and /expenses withhold from cashiers. (Cash Report can afford
+    // role:owner|cashier because it only serves day-level closure aggregates.)
+    Route::get('/gcash-report', [GcashReportController::class, 'index'])
+        ->middleware('role:owner')
+        ->name('gcash-report.index');
 
     Route::get('/expenses', [ExpenseController::class, 'index'])
         ->middleware('role:owner')
