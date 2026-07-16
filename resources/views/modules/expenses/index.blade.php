@@ -363,12 +363,60 @@
                                 <input type="number" step="0.01" min="0.01" name="amount" class="rm-input" x-model="form.amount" required>
                             </div>
                             <div class="rm-field">
+                                {{-- Every method ExpenseController accepts. Offering only a subset
+                                     silently rewrites the rest: a select whose bound value matches
+                                     no option falls back to its first one, so editing a
+                                     bank_transfer expense (the mobile API can create those, and
+                                     this page filters and totals them) submitted 'cash' and
+                                     converted it. --}}
                                 <label class="rm-field-label">Payment Method</label>
                                 <select name="payment_method" class="rm-input" x-model="form.payment_method" required>
                                     <option value="cash">Cash</option>
                                     <option value="gcash">GCash</option>
+                                    <option value="bank_transfer">Bank Transfer</option>
+                                    <option value="other">Other</option>
                                 </select>
                             </div>
+                        </div>
+                        {{-- These inputs must submit every field ExpenseController::update writes:
+                             it stores `$validated['x'] ?? null` for category, vendor, reference and
+                             notes, so any field the form leaves out is wiped on save. The Alpine
+                             state and the row payload already carried them; only the inputs were
+                             missing, which also left the category filter and breakdown on this page
+                             with no way to set a category in the first place. --}}
+                        <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            <div class="rm-field">
+                                <label class="rm-field-label">Category <span class="rm-field-opt">(optional)</span></label>
+                                <select name="expense_category_id" class="rm-input" x-model="form.expense_category_id">
+                                    <option value="">No category</option>
+                                    @foreach ($categories as $category)
+                                        <option value="{{ $category->id }}">{{ $category->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            {{-- Disabled, not merely hidden: x-show only sets display:none and the
+                                 input would still submit. new_category_name takes precedence over
+                                 expense_category_id in the controller, so a stale value would file
+                                 the expense under a newly created category instead of the chosen
+                                 one. A disabled input is not submitted. --}}
+                            <div class="rm-field" x-show="!form.expense_category_id">
+                                <label class="rm-field-label">New category <span class="rm-field-opt">(optional)</span></label>
+                                <input type="text" name="new_category_name" class="rm-input" x-model="form.new_category_name" maxlength="100" placeholder="Creates it if new" :disabled="!! form.expense_category_id">
+                            </div>
+                        </div>
+                        <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            <div class="rm-field">
+                                <label class="rm-field-label">Vendor <span class="rm-field-opt">(optional)</span></label>
+                                <input type="text" name="vendor_name" class="rm-input" x-model="form.vendor_name" maxlength="140">
+                            </div>
+                            <div class="rm-field">
+                                <label class="rm-field-label">Reference # <span class="rm-field-opt">(optional)</span></label>
+                                <input type="text" name="reference_no" class="rm-input" x-model="form.reference_no" maxlength="60">
+                            </div>
+                        </div>
+                        <div class="rm-field">
+                            <label class="rm-field-label">Notes <span class="rm-field-opt">(optional)</span></label>
+                            <textarea name="notes" class="rm-input rm-textarea" x-model="form.notes" rows="2" maxlength="2000"></textarea>
                         </div>
                     </div>
                     <div class="rm-drawer-foot">
