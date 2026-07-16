@@ -48,9 +48,11 @@
         </div>
 
         {{-- Toolbar --}}
-        <form method="GET" action="{{ route('day-closures.index') }}" class="rh-pay-toolbar" x-ref="filterForm">
+        {{-- Native onchange rather than Alpine: this page's only x-data lives on the toasts,
+             so directives here sit outside any component scope and would never bind. --}}
+        <form method="GET" action="{{ route('day-closures.index') }}" class="rh-pay-toolbar">
             <div class="rh-pay-toolbar-row">
-                <select name="branch_id" class="rh-pay-select" @change="$refs.filterForm.requestSubmit()">
+                <select name="branch_id" class="rh-pay-select" onchange="this.form.submit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
                         <option value="{{ $branch->id }}" {{ (string) $filters['branch_id'] === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
