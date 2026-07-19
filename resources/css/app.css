@@ -8075,6 +8075,131 @@ select.rm-input {
     color: var(--rh-text-muted);
 }
 
+/* GCash wallet balance — a running position, so it sits apart from the range-scoped tiles. */
+.rh-gcash-wallet {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    background: var(--rh-surface);
+    border: 1px solid var(--rh-border);
+    border-radius: 14px;
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1.25rem;
+}
+
+.rh-gcash-wallet-label {
+    font-family: var(--rh-font-mono);
+    font-size: 0.58rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--rh-text-muted);
+    margin-bottom: 0.35rem;
+}
+
+.rh-gcash-wallet-value {
+    font-family: var(--rh-font-serif);
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--rh-accent);
+    font-variant-numeric: lining-nums tabular-nums;
+}
+
+.rh-gcash-wallet-value--warn { color: var(--rh-error-text); }
+
+.rh-gcash-wallet-sub {
+    font-family: var(--rh-font-sans);
+    font-size: 0.72rem;
+    color: var(--rh-text-muted);
+    margin-top: 0.4rem;
+}
+
+.rh-gcash-wallet-side {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.rh-gcash-wallet-breakdown {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    min-width: 190px;
+}
+
+.rh-gcash-wallet-breakdown li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-family: var(--rh-font-mono);
+    font-size: 0.68rem;
+    color: var(--rh-text-muted);
+    padding: 0.15rem 0;
+}
+
+/* Accept / decline */
+.rh-gcash-review {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    white-space: nowrap;
+}
+
+.rh-gcash-state {
+    display: inline-block;
+    padding: 0.22rem 0.5rem;
+    border-radius: 4px;
+    font-family: var(--rh-font-mono);
+    font-size: 0.58rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.rh-gcash-state--ok  { background: var(--rh-success-bg); color: var(--rh-success-text); }
+.rh-gcash-state--bad { background: var(--rh-error-bg); color: var(--rh-error-text); }
+
+.rh-gcash-state-btn {
+    font-family: var(--rh-font-mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.05em;
+    background: transparent;
+    border: 1px solid var(--rh-border);
+    color: var(--rh-text-muted);
+    padding: 0.25rem 0.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.rh-gcash-state-btn--ok:hover  { color: var(--rh-success-text); border-color: var(--rh-success-text); }
+.rh-gcash-state-btn--bad:hover { color: var(--rh-error-text); border-color: var(--rh-error-border); }
+
+.rh-gcash-state-undo {
+    font-family: var(--rh-font-mono);
+    font-size: 0.55rem;
+    background: transparent;
+    border: none;
+    color: var(--rh-text-muted);
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+}
+
+/* A declined row is still listed so it can be un-declined, but reads as excluded. */
+.rh-cash-table tr.rh-gcash-row--declined td {
+    opacity: 0.55;
+}
+
+.rh-cash-table tr.rh-gcash-row--declined td:first-child strong {
+    text-decoration: line-through;
+}
+
 .rh-gcash-hint {
     font-family: var(--rh-font-sans);
     font-size: 0.75rem;

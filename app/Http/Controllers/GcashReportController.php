@@ -9,6 +9,8 @@ use App\Models\DayClosure;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\GcashAdjustment;
+use App\Models\GcashEntryStatus;
+use App\Models\GcashWallet;
 use App\Models\Sale;
 use App\Services\SaleService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -16,6 +18,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
@@ -43,6 +46,7 @@ class GcashReportController extends Controller
         $search = trim((string) ($validated['search'] ?? ''));
 
         $sales = $this->paginateTransactions($branchId, $dateFrom, $dateTo, $search);
+        $expenses = $this->paginateExpenses($branchId, $dateFrom, $dateTo);
 
         $gcashSalesTotal = Sale::gcashAmountSum($this->salesQuery($branchId, $dateFrom, $dateTo, $search));
 
@@ -60,8 +64,10 @@ class GcashReportController extends Controller
             : 0.0;
 
         $totals = [
-            // Sales only — this is the figure day_closures.gcash_sales_total snapshots, and it
-            // must keep matching it. Adjustments are reported separately for exactly that reason.
+            // Declined entries are excluded throughout: an entry that never reached the wallet
+            // is not GCash the business received. NOTE this is deliberately no longer the same
+            // figure as day_closures.gcash_sales_total, which snapshots what was *recorded* at
+            // closing time — see GcashReportTest for the documented divergence.
             'gcash_sales_total' => $gcashSalesTotal,
             'gcash_expenses_total' => $gcashExpensesTotal,
             // Already signed: a deduction is stored negative, so this adds.
@@ -69,14 +75,18 @@ class GcashReportController extends Controller
             'net_gcash' => $gcashSalesTotal - $gcashExpensesTotal + $adjustmentsTotal,
             // The paginator already counted this exact filtered set.
             'transaction_count' => $sales->total(),
+            'declined_count' => $this->declinedCountInRange($branchId, $dateFrom, $dateTo),
         ];
 
         return view('modules.gcash_report.index', [
             'branches' => Branch::where('is_active', true)->orderBy('name')->get(),
             'categories' => ExpenseCategory::where('is_active', true)->orderBy('name')->get(),
             'sales' => $sales,
-            'expenses' => $this->paginateExpenses($branchId, $dateFrom, $dateTo),
+            'expenses' => $expenses,
             'adjustments' => $this->paginateAdjustments($branchId, $dateFrom, $dateTo),
+            'statuses' => $this->statusLookup($sales, $expenses),
+            'wallet' => $this->walletSummary($branchId),
+            'walletDefaults' => $this->walletDefaults($dateTo),
             'totals' => $totals,
             'filters' => [
                 'branch_id' => $branchId,
@@ -188,6 +198,288 @@ class GcashReportController extends Controller
         $sale->delete();
 
         return back()->with('success', 'GCash record deleted.');
+    }
+
+    /**
+     * The wallet balance: what should currently be sitting in the GCash account.
+     *
+     * Deliberately NOT filtered by the report's date range — a balance is a running position,
+     * not a period figure, so it always counts everything from the opening balance forward.
+     * It does follow the branch filter, because each branch has its own wallet.
+     *
+     * @return array{balance: float, opening_balance: float, opening_date: ?string,
+     *               inflow: float, outflow: float, adjustments: float, configured: bool,
+     *               branch_id: ?int, per_branch: array<int, array{name: string, balance: float}>}
+     */
+    private function walletSummary(?int $branchId): array
+    {
+        // Deliberately NOT filtered by is_active, unlike the branch dropdown: deactivating a
+        // branch does not empty its GCash account, and a balance that silently drops real money
+        // because of an admin flag would be wrong.
+        $branches = $branchId !== null
+            ? Branch::where('id', $branchId)->get()
+            : Branch::orderBy('name')->get();
+
+        $wallets = GcashWallet::whereIn('branch_id', $branches->pluck('id'))->get()->keyBy('branch_id');
+
+        $balance = 0.0;
+        $openingTotal = 0.0;
+        $inflow = 0.0;
+        $outflow = 0.0;
+        $adjustments = 0.0;
+        $perBranch = [];
+
+        foreach ($branches as $branch) {
+            $wallet = $wallets->get($branch->id);
+            $opening = (float) ($wallet->opening_balance ?? 0);
+            // With no wallet configured, count from the beginning of time rather than refusing
+            // to show a balance — the figure is then "movement so far", which is still useful.
+            $since = $wallet?->opening_date?->toDateString();
+
+            $branchInflow = Sale::gcashAmountSum($this->walletSalesQuery($branch->id, $since));
+            $branchOutflow = (float) $this->walletExpensesQuery($branch->id, $since)->sum('amount');
+            $branchAdjustments = (float) $this->walletAdjustmentsQuery($branch->id, $since)->sum('amount');
+
+            $branchBalance = $opening + $branchInflow - $branchOutflow + $branchAdjustments;
+
+            $openingTotal += $opening;
+            $inflow += $branchInflow;
+            $outflow += $branchOutflow;
+            $adjustments += $branchAdjustments;
+            $balance += $branchBalance;
+
+            // A branch only earns a line in the breakdown if it actually holds or moves money,
+            // so including inactive branches in the maths does not clutter the display.
+            if ($wallet !== null || abs($branchBalance) > 0.001) {
+                $perBranch[] = [
+                    'id' => $branch->id,
+                    'name' => $branch->name,
+                    'balance' => round($branchBalance, 2),
+                    'configured' => $wallet !== null,
+                ];
+            }
+        }
+
+        $single = $branchId !== null ? $wallets->get($branchId) : null;
+
+        return [
+            'balance' => round($balance, 2),
+            'opening_balance' => round($openingTotal, 2),
+            // Only a single branch in scope has one meaningful date; across branches the
+            // opening dates differ, so the view must not present one as if it were shared.
+            'opening_date' => $single?->opening_date?->toDateString(),
+            'inflow' => round($inflow, 2),
+            'outflow' => round($outflow, 2),
+            'adjustments' => round($adjustments, 2),
+            'configured' => $branchId !== null ? $single !== null : $wallets->count() === $branches->count(),
+            'scope_count' => $branches->count(),
+            'unconfigured_count' => $branches->count() - $wallets->count(),
+            'branch_id' => $branchId,
+            'per_branch' => $perBranch,
+        ];
+    }
+
+    /**
+     * Per-branch opening balances for the editing drawer.
+     *
+     * The drawer edits ONE branch's wallet, so it must never be seeded from the summary — that
+     * carries a cross-branch total and, on the all-branches view, no opening date at all.
+     * Saving those aggregates against a single branch would overwrite a real wallet with a
+     * figure belonging to no branch.
+     *
+     * @return array<string, array{opening_balance: string, opening_date: string}>
+     */
+    private function walletDefaults(string $fallbackDate): array
+    {
+        $wallets = GcashWallet::all()->keyBy('branch_id');
+
+        return Branch::orderBy('name')->get()
+            ->mapWithKeys(function (Branch $branch) use ($wallets, $fallbackDate) {
+                $wallet = $wallets->get($branch->id);
+
+                return [(string) $branch->id => [
+                    'opening_balance' => number_format((float) ($wallet->opening_balance ?? 0), 2, '.', ''),
+                    'opening_date' => $wallet?->opening_date?->toDateString() ?? $fallbackDate,
+                ]];
+            })
+            ->all();
+    }
+
+    /**
+     * Set (or move) the point the running balance counts from.
+     */
+    public function updateWallet(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'opening_balance' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:99999999.99'],
+            'opening_date' => ['required', 'date'],
+        ]);
+
+        GcashWallet::updateOrCreate(
+            ['branch_id' => (int) $validated['branch_id']],
+            [
+                'opening_balance' => $validated['opening_balance'],
+                'opening_date' => $validated['opening_date'],
+                'updated_by_user_id' => $request->user()->id,
+            ]
+        );
+
+        return back()->with('success', 'Opening balance saved.');
+    }
+
+    /**
+     * Mark an entry as seen on the wallet statement, missing from it, or back to unreviewed.
+     */
+    public function updateEntryStatus(Request $request, string $type, int $id): RedirectResponse
+    {
+        $validated = $request->validate([
+            'status' => ['required', Rule::in([
+                GcashEntryStatus::ACCEPTED,
+                GcashEntryStatus::DECLINED,
+                GcashEntryStatus::PENDING,
+            ])],
+            'note' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        if (! in_array($type, [GcashEntryStatus::TYPE_SALE, GcashEntryStatus::TYPE_EXPENSE], true)) {
+            return back()->with('error', 'That entry cannot be reviewed.');
+        }
+
+        if (! $this->entryExists($type, $id)) {
+            return back()->with('error', 'That entry no longer exists.');
+        }
+
+        // Pending is the absence of a verdict, so clearing one deletes the row rather than
+        // storing a third state that the balance query would have to know about.
+        if ($validated['status'] === GcashEntryStatus::PENDING) {
+            GcashEntryStatus::where('entry_type', $type)->where('entry_id', $id)->delete();
+
+            return back()->with('success', 'Marked as not yet reviewed.');
+        }
+
+        GcashEntryStatus::updateOrCreate(
+            ['entry_type' => $type, 'entry_id' => $id],
+            [
+                'status' => $validated['status'],
+                'note' => $validated['note'] ?? null,
+                'reviewed_by_user_id' => $request->user()->id,
+                'reviewed_at' => now(),
+            ]
+        );
+
+        return back()->with('success', $validated['status'] === GcashEntryStatus::DECLINED
+            ? 'Marked as not received — it no longer counts toward the balance.'
+            : 'Marked as received.');
+    }
+
+    private function entryExists(string $type, int $id): bool
+    {
+        return $type === GcashEntryStatus::TYPE_SALE
+            ? Sale::whereKey($id)->exists()
+            : Expense::whereKey($id)->exists();
+    }
+
+    /**
+     * Verdicts for the rows actually on screen, keyed "type:id", so the view can label each row
+     * without a query per row.
+     *
+     * Scoped to the current page rather than loading the whole table: the verdict history grows
+     * without bound while a page only ever shows PER_PAGE rows of each kind.
+     *
+     * @param  LengthAwarePaginator<int, Sale>  $sales
+     * @param  LengthAwarePaginator<int, Expense>  $expenses
+     * @return array<string, array{status: string, note: ?string}>
+     */
+    private function statusLookup(LengthAwarePaginator $sales, LengthAwarePaginator $expenses): array
+    {
+        $saleIds = collect($sales->items())->pluck('id');
+        $expenseIds = collect($expenses->items())->pluck('id');
+
+        if ($saleIds->isEmpty() && $expenseIds->isEmpty()) {
+            return [];
+        }
+
+        return GcashEntryStatus::query()
+            ->where(function (Builder $query) use ($saleIds, $expenseIds) {
+                $query->where(fn (Builder $q) => $q
+                    ->where('entry_type', GcashEntryStatus::TYPE_SALE)
+                    ->whereIn('entry_id', $saleIds))
+                    ->orWhere(fn (Builder $q) => $q
+                        ->where('entry_type', GcashEntryStatus::TYPE_EXPENSE)
+                        ->whereIn('entry_id', $expenseIds));
+            })
+            ->get()
+            ->mapWithKeys(fn (GcashEntryStatus $row) => [
+                $row->entry_type.':'.$row->entry_id => [
+                    'status' => $row->status,
+                    'note' => $row->note,
+                ],
+            ])
+            ->all();
+    }
+
+    private function declinedCountInRange(?int $branchId, string $dateFrom, string $dateTo): int
+    {
+        // excludeDeclined = false, or the query would filter out the very rows being counted.
+        $sales = (clone $this->salesQuery($branchId, $dateFrom, $dateTo, '', false))
+            ->whereIn('sales.id', GcashEntryStatus::declinedIds(GcashEntryStatus::TYPE_SALE))
+            ->count();
+
+        $expenses = (clone $this->expensesQuery($branchId, $dateFrom, $dateTo, false))
+            ->whereIn('id', GcashEntryStatus::declinedIds(GcashEntryStatus::TYPE_EXPENSE))
+            ->count();
+
+        return $sales + $expenses;
+    }
+
+    /**
+     * @return Builder<Sale>
+     */
+    private function walletSalesQuery(int $branchId, ?string $since): Builder
+    {
+        $query = Sale::query()
+            ->gcashBearing()
+            ->where('sales.branch_id', $branchId)
+            ->whereNotIn('sales.id', GcashEntryStatus::declinedIds(GcashEntryStatus::TYPE_SALE));
+
+        if ($since !== null) {
+            $query->whereDate('sales.sale_datetime', '>=', $since);
+        }
+
+        return $query;
+    }
+
+    /**
+     * @return Builder<Expense>
+     */
+    private function walletExpensesQuery(int $branchId, ?string $since): Builder
+    {
+        $query = Expense::query()
+            ->where('status', 'approved')
+            ->where('payment_method', 'gcash')
+            ->where('branch_id', $branchId)
+            ->whereNotIn('id', GcashEntryStatus::declinedIds(GcashEntryStatus::TYPE_EXPENSE));
+
+        if ($since !== null) {
+            $query->whereDate('expense_date', '>=', $since);
+        }
+
+        return $query;
+    }
+
+    /**
+     * @return Builder<GcashAdjustment>
+     */
+    private function walletAdjustmentsQuery(int $branchId, ?string $since): Builder
+    {
+        $query = GcashAdjustment::query()->where('branch_id', $branchId);
+
+        if ($since !== null) {
+            $query->whereDate('adjustment_date', '>=', $since);
+        }
+
+        return $query;
     }
 
     /**
@@ -345,7 +637,8 @@ class GcashReportController extends Controller
      */
     private function paginateTransactions(?int $branchId, string $dateFrom, string $dateTo, string $search): LengthAwarePaginator
     {
-        return $this->salesQuery($branchId, $dateFrom, $dateTo, $search)
+        // excludeDeclined = false: a declined row must stay listed so it can be reviewed again.
+        return $this->salesQuery($branchId, $dateFrom, $dateTo, $search, false)
             ->with(['branch:id,name', 'cashier:id,name'])
             ->orderByDesc('sales.sale_datetime')
             ->orderByDesc('sales.id')
@@ -360,7 +653,7 @@ class GcashReportController extends Controller
      */
     private function paginateExpenses(?int $branchId, string $dateFrom, string $dateTo): LengthAwarePaginator
     {
-        return $this->expensesQuery($branchId, $dateFrom, $dateTo)
+        return $this->expensesQuery($branchId, $dateFrom, $dateTo, false)
             ->with(['branch:id,name', 'category:id,name'])
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
@@ -375,12 +668,19 @@ class GcashReportController extends Controller
      *
      * @return Builder<Sale>
      */
-    private function salesQuery(?int $branchId, string $dateFrom, string $dateTo, string $search = ''): Builder
+    private function salesQuery(?int $branchId, string $dateFrom, string $dateTo, string $search = '', bool $excludeDeclined = true): Builder
     {
         $query = Sale::query()
             ->gcashBearing()
             ->whereDate('sales.sale_datetime', '>=', $dateFrom)
             ->whereDate('sales.sale_datetime', '<=', $dateTo);
+
+        // Money that never reached the wallet is not money received, so it is out of every
+        // reported figure. The listing passes false so a declined row stays visible and can be
+        // un-declined — excluding it from the table would strand it.
+        if ($excludeDeclined) {
+            $query->whereNotIn('sales.id', GcashEntryStatus::declinedIds(GcashEntryStatus::TYPE_SALE));
+        }
 
         if ($branchId !== null) {
             $query->where('sales.branch_id', $branchId);
@@ -430,13 +730,17 @@ class GcashReportController extends Controller
     /**
      * @return Builder<Expense>
      */
-    private function expensesQuery(?int $branchId, string $dateFrom, string $dateTo): Builder
+    private function expensesQuery(?int $branchId, string $dateFrom, string $dateTo, bool $excludeDeclined = true): Builder
     {
         $query = Expense::query()
             ->where('status', 'approved')
             ->where('payment_method', 'gcash')
             ->whereDate('expense_date', '>=', $dateFrom)
             ->whereDate('expense_date', '<=', $dateTo);
+
+        if ($excludeDeclined) {
+            $query->whereNotIn('id', GcashEntryStatus::declinedIds(GcashEntryStatus::TYPE_EXPENSE));
+        }
 
         if ($branchId !== null) {
             $query->where('branch_id', $branchId);

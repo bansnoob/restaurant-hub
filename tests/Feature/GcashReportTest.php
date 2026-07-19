@@ -243,7 +243,19 @@ class GcashReportTest extends TestCase
         $this->assertSame(0.0, $totals['gcash_sales_total']);
         $this->assertSame(0, $totals['transaction_count']);
         $response->assertSee('No GCash transactions');
-        $response->assertDontSee('₱100.00');
+
+        // Scoped to the stats strip rather than the whole page: the wallet balance card also
+        // renders an amount, and it is *meant* to ignore the search — a running balance is not
+        // a filtered figure. A page-wide assertion would fail for the wrong reason.
+        $this->assertStringNotContainsString('₱100.00', $this->statsStrip($response->getContent()));
+    }
+
+    /** The stat tiles only, so assertions about them are not confused by the balance card. */
+    private function statsStrip(string $html): string
+    {
+        preg_match('/<div class="rh-pay-stats">(.*?)<\/div>\s*<\/div>/s', $html, $m);
+
+        return $m[1] ?? '';
     }
 
     public function test_search_wildcards_are_matched_literally(): void
@@ -366,5 +378,50 @@ class GcashReportTest extends TestCase
 
         $this->assertSame(1100.00, (float) $closure->gcash_sales_total);
         $this->assertSame((float) $closure->gcash_sales_total, $reportTotal);
+    }
+
+    /**
+     * ...but once an entry is marked as never having reached the wallet, the two figures are
+     * MEANT to differ, and this pins that as intended rather than a regression.
+     *
+     * day_closures.gcash_sales_total is a snapshot of what was *recorded* when the day was
+     * signed off. The report answers a different question — what actually arrived — so a
+     * declined entry leaves the report lower by exactly that amount. If this ever starts
+     * failing, the two have been silently re-coupled.
+     */
+    public function test_declining_an_entry_makes_the_report_deliberately_diverge_from_the_closure(): void
+    {
+        $today = now()->toDateString();
+
+        $kept = $this->sale(['payment_method' => 'gcash', 'grand_total' => 500.00]);
+        $missing = $this->sale(['payment_method' => 'gcash', 'grand_total' => 300.00]);
+
+        $this->actingAs($this->owner)->post(route('day-close.store'), [
+            'branch_id' => $this->branch->id,
+            'closed_at_date' => $today,
+            'opening_float' => 0,
+            'counted_cash' => 0,
+        ])->assertSessionHasNoErrors();
+
+        $closure = DayClosure::where('branch_id', $this->branch->id)->firstOrFail();
+        $this->assertSame(800.00, (float) $closure->gcash_sales_total);
+
+        $this->actingAs($this->owner)->put(
+            route('gcash-report.entries.status', ['type' => 'sale', 'id' => $missing->id]),
+            ['status' => 'declined']
+        )->assertSessionHasNoErrors();
+
+        $reportTotal = $this->actingAs($this->owner)
+            ->get(route('gcash-report.index', [
+                'branch_id' => $this->branch->id,
+                'date_from' => $today,
+                'date_to' => $today,
+            ]))
+            ->viewData('totals')['gcash_sales_total'];
+
+        // The closure keeps its signed-off figure; the report drops what never arrived.
+        $this->assertSame(800.00, (float) $closure->fresh()->gcash_sales_total);
+        $this->assertSame(500.00, $reportTotal);
+        $this->assertSame(500.00, (float) $kept->grand_total);
     }
 }

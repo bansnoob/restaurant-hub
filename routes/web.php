@@ -161,6 +161,17 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:owner')
         ->name('gcash-report.adjustments.destroy');
 
+    // Wallet reconciliation: the opening balance the running total counts from, and whether
+    // each entry was actually seen on the GCash statement.
+    Route::put('/gcash-report/wallet', [GcashReportController::class, 'updateWallet'])
+        ->middleware('role:owner')
+        ->name('gcash-report.wallet.update');
+    Route::put('/gcash-report/entries/{type}/{id}/status', [GcashReportController::class, 'updateEntryStatus'])
+        ->middleware('role:owner')
+        ->whereIn('type', ['sale', 'expense'])
+        ->whereNumber('id')
+        ->name('gcash-report.entries.status');
+
     Route::get('/expenses', [ExpenseController::class, 'index'])
         ->middleware('role:owner')
         ->name('expenses.index');

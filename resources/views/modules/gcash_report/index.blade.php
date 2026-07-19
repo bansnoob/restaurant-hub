@@ -20,6 +20,13 @@
             expenseDestroyTemplate: @js(route('expenses.destroy', ['expense' => '__ID__'])),
             adjustmentUpdateTemplate: @js(route('gcash-report.adjustments.update', ['gcashAdjustment' => '__ID__'])),
             adjustmentDestroyTemplate: @js(route('gcash-report.adjustments.destroy', ['gcashAdjustment' => '__ID__'])),
+            entryStatusTemplate: @js(route('gcash-report.entries.status', ['type' => '__TYPE__', 'id' => '__ID__'])),
+            walletBranchId: @js((string) $defaultBranchId),
+            {{-- Per branch, never the summary: the summary's opening_balance is a cross-branch
+                 total and its opening_date is null unless one branch is selected. Seeding a
+                 single-branch form from those would let a blind Save overwrite a real wallet
+                 with a figure belonging to no branch. --}}
+            walletDefaults: @js($walletDefaults),
             defaultBranchId: @js((string) $defaultBranchId),
             defaultDate: @js($filters['date_to']),
         })"
@@ -47,6 +54,62 @@
                 <button type="button" class="rm-btn rm-btn--ghost" @click="openAdjustmentCreate()">Add Adjustment</button>
                 <button type="button" class="rm-btn rm-btn--ghost" @click="openExpenseCreate()">Add GCash Expense</button>
                 <button type="button" class="rm-btn rm-btn--primary" @click="openRecordCreate()">Add GCash Record</button>
+            </div>
+        </div>
+
+        {{-- Wallet balance. Deliberately outside the stats strip: those tiles describe the
+             selected date range, this is a running position that ignores it. --}}
+        <div class="rh-gcash-wallet">
+            <div class="rh-gcash-wallet-main">
+                <p class="rh-gcash-wallet-label">
+                    Current GCash Balance
+                    @if ($filters['branch_id'])
+                        · {{ $branches->firstWhere('id', (int) $filters['branch_id'])?->name }}
+                    @else
+                        · all branches
+                    @endif
+                </p>
+                <p class="rh-gcash-wallet-value {{ $wallet['balance'] < 0 ? 'rh-gcash-wallet-value--warn' : '' }}">
+                    {{ $wallet['balance'] < 0 ? '−' : '' }}₱{{ number_format(abs($wallet['balance']), 2) }}
+                </p>
+                {{-- Gated on `configured` alone. Gating on opening_date too used to hide this
+                     whole line on the all-branches view, where opening_date is always null,
+                     and wrongly told the owner no opening balance was set. --}}
+                <p class="rh-gcash-wallet-sub">
+                    @if ($wallet['configured'])
+                        Opening ₱{{ number_format($wallet['opening_balance'], 2) }}
+                        @if ($wallet['opening_date'])
+                            on {{ \Carbon\Carbon::parse($wallet['opening_date'])->format('M j, Y') }}
+                        @elseif ($wallet['scope_count'] > 1)
+                            across {{ $wallet['scope_count'] }} branches
+                        @endif
+                        · in ₱{{ number_format($wallet['inflow'], 2) }}
+                        · out ₱{{ number_format($wallet['outflow'], 2) }}
+                        @if (abs($wallet['adjustments']) > 0.001)
+                            · adjustments {{ $wallet['adjustments'] < 0 ? '−' : '+' }}₱{{ number_format(abs($wallet['adjustments']), 2) }}
+                        @endif
+                    @elseif ($wallet['unconfigured_count'] < $wallet['scope_count'])
+                        Partly set — {{ $wallet['unconfigured_count'] }} of {{ $wallet['scope_count'] }} branches have no opening balance, so this counts movement only for those.
+                    @else
+                        Movement only — set an opening balance so this reflects the real wallet.
+                    @endif
+                    · excludes anything marked not received
+                </p>
+            </div>
+            <div class="rh-gcash-wallet-side">
+                @if (! $filters['branch_id'] && count($wallet['per_branch']) > 1)
+                    <ul class="rh-gcash-wallet-breakdown">
+                        @foreach ($wallet['per_branch'] as $row)
+                            <li>
+                                <span>{{ $row['name'] }}</span>
+                                <span>₱{{ number_format($row['balance'], 2) }}</span>
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+                <button type="button" class="rm-btn rm-btn--ghost" @click="openWallet()">
+                    {{ $wallet['configured'] ? 'Opening balance' : 'Set opening balance' }}
+                </button>
             </div>
         </div>
 
@@ -122,6 +185,7 @@
                             <th class="center">Type</th>
                             <th class="num">Order Total</th>
                             <th class="num">GCash Amount</th>
+                            <th class="center">In wallet?</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -131,6 +195,8 @@
                                 $isMixed = $sale->payment_method === 'mixed';
                                 $isManual = $sale->isManualGcashRecord();
                                 $gcashValue = $sale->gcashValue();
+                                $state = $statuses['sale:'.$sale->id]['status'] ?? 'pending';
+                                $isDeclined = $state === 'declined';
                                 $payload = [
                                     'id' => $sale->id,
                                     'branch_id' => (string) $sale->branch_id,
@@ -139,7 +205,7 @@
                                     'description' => (string) $sale->notes,
                                 ];
                             @endphp
-                            <tr>
+                            <tr class="{{ $isDeclined ? 'rh-gcash-row--declined' : '' }}">
                                 <td><strong>{{ $sale->order_number }}</strong></td>
                                 <td>
                                     {{ $sale->sale_datetime?->format('M j') ?? '—' }}
@@ -155,7 +221,10 @@
                                     @endif
                                 </td>
                                 <td class="num">₱{{ number_format((float) $sale->grand_total, 2) }}</td>
-                                <td class="num num--accent">₱{{ number_format($gcashValue, 2) }}</td>
+                                <td class="num {{ $isDeclined ? 'num--danger' : 'num--accent' }}">₱{{ number_format($gcashValue, 2) }}</td>
+                                <td class="center">
+                                    <x-gcash-review type="sale" :id="$sale->id" :state="$state" />
+                                </td>
                                 <td>
                                     @if ($isManual)
                                         <div class="rh-gcash-row-actions">
@@ -194,6 +263,7 @@
                             <th>Branch</th>
                             <th>Category</th>
                             <th class="num">Amount</th>
+                            <th class="center">In wallet?</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -211,13 +281,17 @@
                                     'reference_no' => (string) $expense->reference_no,
                                     'notes' => (string) $expense->notes,
                                 ];
+                                $expenseState = $statuses['expense:'.$expense->id]['status'] ?? 'pending';
                             @endphp
-                            <tr>
+                            <tr class="{{ $expenseState === 'declined' ? 'rh-gcash-row--declined' : '' }}">
                                 <td><strong>{{ $expense->description }}</strong></td>
                                 <td>{{ \Carbon\Carbon::parse($expense->expense_date)->format('M j, Y') }}</td>
                                 <td>{{ $expense->branch?->name ?? '—' }}</td>
                                 <td style="font-family: var(--rh-font-mono); font-size: 0.7rem; color: var(--rh-text-muted);">{{ $expense->category?->name ?? '—' }}</td>
                                 <td class="num num--warn">₱{{ number_format((float) $expense->amount, 2) }}</td>
+                                <td class="center">
+                                    <x-gcash-review type="expense" :id="$expense->id" :state="$expenseState" />
+                                </td>
                                 <td>
                                     <div class="rh-gcash-row-actions">
                                         <button type="button" class="rh-gcash-link" @click="openExpenseEdit(@js($expensePayload))">Edit</button>
@@ -490,10 +564,63 @@
             </div>
         </template>
 
+        {{-- Opening balance drawer --}}
+        <template x-if="walletOpen">
+            <div class="rm-overlay" @click.self="closeWallet()">
+                <form method="POST" action="{{ route('gcash-report.wallet.update') }}" class="rm-drawer" @submit="submitting = true">
+                    @csrf
+                    <input type="hidden" name="_method" value="PUT">
+                    <div class="rm-drawer-head">
+                        <h2 class="rm-drawer-title">GCash Opening Balance</h2>
+                        <button type="button" class="rm-drawer-close" @click="closeWallet()">×</button>
+                    </div>
+                    <div class="rm-drawer-body">
+                        <p class="rh-gcash-hint">The balance in the GCash account on the day you started tracking it here. Entries dated before that day are treated as already included in it, so turning this on part-way through does not double-count.</p>
+                        <div class="rm-field">
+                            <label class="rm-field-label">Branch</label>
+                            {{-- Re-sync on change: each branch has its own wallet, so switching
+                                 must not leave the previous branch's figures in the fields. --}}
+                            <select name="branch_id" class="rm-input" x-model="walletForm.branch_id"
+                                    @change="syncWalletForm($event.target.value)" required>
+                                <option value="">Select branch</option>
+                                @foreach ($branches as $branch)
+                                    <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            <div class="rm-field">
+                                <label class="rm-field-label">Balance on that day <span class="rm-field-opt">(₱)</span></label>
+                                <input type="number" step="0.01" min="0" name="opening_balance" class="rm-input" x-model="walletForm.opening_balance" required>
+                            </div>
+                            <div class="rm-field">
+                                <label class="rm-field-label">Counting from</label>
+                                <input type="date" name="opening_date" class="rm-input" x-model="walletForm.opening_date" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="rm-drawer-foot">
+                        <div></div>
+                        <div class="rm-drawer-foot-right">
+                            <button type="button" class="rm-btn rm-btn--ghost" @click="closeWallet()">Cancel</button>
+                            <button type="submit" class="rm-btn rm-btn--primary" :disabled="submitting">Save</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </template>
+
         {{-- Deletes post a real form so they carry CSRF and the method spoof. --}}
         <form method="POST" x-ref="deleteForm" class="hidden" style="display:none;">
             @csrf
             <input type="hidden" name="_method" value="DELETE">
+        </form>
+
+        {{-- Shared form for accept/decline, so each row needs buttons rather than its own form. --}}
+        <form method="POST" x-ref="statusForm" class="hidden" style="display:none;">
+            @csrf
+            <input type="hidden" name="_method" value="PUT">
+            <input type="hidden" name="status" x-ref="statusValue">
         </form>
     </div>
 
@@ -535,6 +662,41 @@
                 recordOpen: false,
                 expenseOpen: false,
                 adjustmentOpen: false,
+                walletOpen: false,
+                walletForm: {
+                    branch_id: config.walletBranchId,
+                    opening_balance: '0.00',
+                    opening_date: '',
+                },
+
+                // Load the figures belonging to the branch being edited, so the form always
+                // shows that wallet rather than a leftover from another one.
+                syncWalletForm(branchId) {
+                    const defaults = config.walletDefaults[String(branchId)];
+                    if (!defaults) {
+                        return;
+                    }
+                    this.walletForm.opening_balance = defaults.opening_balance;
+                    this.walletForm.opening_date = defaults.opening_date;
+                },
+                openWallet() {
+                    this.walletForm.branch_id = config.walletBranchId;
+                    this.syncWalletForm(config.walletBranchId);
+                    this.walletOpen = true;
+                },
+                closeWallet() {
+                    this.walletOpen = false;
+                },
+
+                setEntryStatus(type, id, status) {
+                    const form = this.$refs.statusForm;
+                    form.setAttribute('action', config.entryStatusTemplate
+                        .replace('__TYPE__', type)
+                        .replace('__ID__', id));
+                    this.$refs.statusValue.value = status;
+                    form.submit();
+                },
+
                 record: blankRecord(),
                 expense: blankExpense(),
                 adjustment: blankAdjustment(),
