@@ -149,6 +149,18 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:owner')
         ->name('gcash-report.records.destroy');
 
+    // Correcting entries. Their own table, so they never reach the Sales or Expenses pages
+    // and cannot invalidate a closed day's GCash snapshot.
+    Route::post('/gcash-report/adjustments', [GcashReportController::class, 'storeAdjustment'])
+        ->middleware('role:owner')
+        ->name('gcash-report.adjustments.store');
+    Route::put('/gcash-report/adjustments/{gcashAdjustment}', [GcashReportController::class, 'updateAdjustment'])
+        ->middleware('role:owner')
+        ->name('gcash-report.adjustments.update');
+    Route::delete('/gcash-report/adjustments/{gcashAdjustment}', [GcashReportController::class, 'destroyAdjustment'])
+        ->middleware('role:owner')
+        ->name('gcash-report.adjustments.destroy');
+
     Route::get('/expenses', [ExpenseController::class, 'index'])
         ->middleware('role:owner')
         ->name('expenses.index');

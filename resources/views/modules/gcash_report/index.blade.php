@@ -18,6 +18,8 @@
             recordDestroyTemplate: @js(route('gcash-report.records.destroy', ['sale' => '__ID__'])),
             expenseUpdateTemplate: @js(route('expenses.update', ['expense' => '__ID__'])),
             expenseDestroyTemplate: @js(route('expenses.destroy', ['expense' => '__ID__'])),
+            adjustmentUpdateTemplate: @js(route('gcash-report.adjustments.update', ['gcashAdjustment' => '__ID__'])),
+            adjustmentDestroyTemplate: @js(route('gcash-report.adjustments.destroy', ['gcashAdjustment' => '__ID__'])),
             defaultBranchId: @js((string) $defaultBranchId),
             defaultDate: @js($filters['date_to']),
         })"
@@ -42,6 +44,7 @@
                 </p>
             </div>
             <div class="rh-pay-topbar-actions">
+                <button type="button" class="rm-btn rm-btn--ghost" @click="openAdjustmentCreate()">Add Adjustment</button>
                 <button type="button" class="rm-btn rm-btn--ghost" @click="openExpenseCreate()">Add GCash Expense</button>
                 <button type="button" class="rm-btn rm-btn--primary" @click="openRecordCreate()">Add GCash Record</button>
             </div>
@@ -58,14 +61,16 @@
                 <p class="rh-pay-stat-value rh-pay-stat-value--warn">₱{{ number_format($totals['gcash_expenses_total'], 2) }}</p>
             </div>
             <div class="rh-pay-stat" style="--i:3;">
+                <p class="rh-pay-stat-label">Adjustments</p>
+                <p class="rh-pay-stat-value {{ $totals['adjustments_total'] < 0 ? 'rh-pay-stat-value--warn' : '' }}">
+                    {{ $totals['adjustments_total'] < 0 ? '−' : '' }}₱{{ number_format(abs($totals['adjustments_total']), 2) }}
+                </p>
+            </div>
+            <div class="rh-pay-stat" style="--i:4;">
                 <p class="rh-pay-stat-label">Net GCash</p>
                 <p class="rh-pay-stat-value {{ $totals['net_gcash'] < 0 ? 'rh-pay-stat-value--warn' : 'rh-pay-stat-value--accent' }}">
                     {{ $totals['net_gcash'] < 0 ? '−' : '' }}₱{{ number_format(abs($totals['net_gcash']), 2) }}
                 </p>
-            </div>
-            <div class="rh-pay-stat" style="--i:4;">
-                <p class="rh-pay-stat-label">Transactions</p>
-                <p class="rh-pay-stat-value">{{ number_format($totals['transaction_count']) }}</p>
             </div>
         </div>
 
@@ -226,6 +231,117 @@
             </div>
             <div class="rh-pay-pagination">{{ $expenses->links() }}</div>
         @endif
+
+        {{-- Corrections --}}
+        <h2 class="rh-pay-section-title">Adjustments · Correcting Entries</h2>
+        @if ($adjustments->isEmpty())
+            <div class="rh-pay-list">
+                <div class="rh-pay-empty">
+                    <p class="rh-pay-empty-title">No adjustments</p>
+                    <p style="font-size: 0.82rem;">Use an adjustment to deduct GCash that was recorded in error or later reversed. It does not touch the Sales or Expenses pages.</p>
+                </div>
+            </div>
+        @else
+            <div style="overflow-x: auto;">
+                <table class="rh-cash-table">
+                    <thead>
+                        <tr>
+                            <th>Reason</th>
+                            <th>Date</th>
+                            <th>Branch</th>
+                            <th>By</th>
+                            <th class="num">Amount</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($adjustments as $adjustment)
+                            @php
+                                $amount = (float) $adjustment->amount;
+                                $adjustmentPayload = [
+                                    'id' => $adjustment->id,
+                                    'branch_id' => (string) $adjustment->branch_id,
+                                    'adjustment_date' => $adjustment->adjustment_date?->toDateString(),
+                                    // The form edits a positive figure; the sign is the server's.
+                                    'amount' => number_format(abs($amount), 2, '.', ''),
+                                    'reason' => (string) $adjustment->reason,
+                                ];
+                            @endphp
+                            <tr>
+                                <td><strong>{{ $adjustment->reason }}</strong></td>
+                                <td>{{ $adjustment->adjustment_date?->format('M j, Y') ?? '—' }}</td>
+                                <td>{{ $adjustment->branch?->name ?? '—' }}</td>
+                                <td style="font-family: var(--rh-font-mono); font-size: 0.7rem; color: var(--rh-text-muted);">{{ $adjustment->recordedBy?->name ?? '—' }}</td>
+                                <td class="num {{ $amount < 0 ? 'num--danger' : 'num--success' }}">
+                                    {{ $amount < 0 ? '−' : '+' }}₱{{ number_format(abs($amount), 2) }}
+                                </td>
+                                <td>
+                                    <div class="rh-gcash-row-actions">
+                                        <button type="button" class="rh-gcash-link" @click="openAdjustmentEdit(@js($adjustmentPayload))">Edit</button>
+                                        <button type="button" class="rh-gcash-link rh-gcash-link--danger" @click="deleteAdjustment(@js($adjustmentPayload))">Delete</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            <div class="rh-pay-pagination">{{ $adjustments->links() }}</div>
+        @endif
+
+        {{-- Adjustment drawer --}}
+        <template x-if="adjustmentOpen">
+            <div class="rm-overlay" @click.self="closeAdjustment()">
+                <form method="POST"
+                      :action="adjustment.mode === 'edit' ? adjustment.action : '{{ route('gcash-report.adjustments.store') }}'"
+                      class="rm-drawer"
+                      @submit="submitting = true">
+                    @csrf
+                    <template x-if="adjustment.mode === 'edit'">
+                        <input type="hidden" name="_method" value="PUT">
+                    </template>
+                    <div class="rm-drawer-head">
+                        <h2 class="rm-drawer-title" x-text="adjustment.mode === 'edit' ? 'Edit Adjustment' : 'Add Adjustment'"></h2>
+                        <button type="button" class="rm-drawer-close" @click="closeAdjustment()">×</button>
+                    </div>
+                    <div class="rm-drawer-body">
+                        <p class="rh-gcash-hint">Deducts from GCash takings without touching the Sales or Expenses pages. Enter the amount to remove as a positive figure — it is subtracted for you. Safe to use on a day that is already closed: the closed day's signed-off totals are left untouched.</p>
+                        <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            <div class="rm-field">
+                                <label class="rm-field-label">Branch</label>
+                                <select name="branch_id" class="rm-input" x-model="adjustment.branch_id" required>
+                                    <option value="">Select branch</option>
+                                    @foreach ($branches as $branch)
+                                        <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="rm-field">
+                                <label class="rm-field-label">Date</label>
+                                <input type="date" name="adjustment_date" class="rm-input" x-model="adjustment.adjustment_date" required>
+                            </div>
+                        </div>
+                        <div class="rm-field">
+                            <label class="rm-field-label">Reason</label>
+                            <input type="text" name="reason" class="rm-input" x-model="adjustment.reason" required maxlength="200" placeholder="e.g. Reversed — order A-1042 recorded twice">
+                        </div>
+                        <div class="rm-field">
+                            <label class="rm-field-label">Amount to deduct <span class="rm-field-opt">(₱)</span></label>
+                            <input type="number" step="0.01" min="0.01" name="amount" class="rm-input" x-model="adjustment.amount" required>
+                        </div>
+                    </div>
+                    <div class="rm-drawer-foot">
+                        <div></div>
+                        <div class="rm-drawer-foot-right">
+                            <button type="button" class="rm-btn rm-btn--ghost" @click="closeAdjustment()">Cancel</button>
+                            <button type="submit" class="rm-btn rm-btn--primary" :disabled="submitting">
+                                <span x-text="adjustment.mode === 'edit' ? 'Save changes' : 'Save adjustment'"></span>
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </template>
 
         {{-- GCash record drawer --}}
         <template x-if="recordOpen">
@@ -405,12 +521,48 @@
                 notes: '',
             });
 
+            const blankAdjustment = () => ({
+                mode: 'create',
+                action: '',
+                branch_id: config.defaultBranchId,
+                adjustment_date: config.defaultDate,
+                amount: '',
+                reason: '',
+            });
+
             return {
                 submitting: false,
                 recordOpen: false,
                 expenseOpen: false,
+                adjustmentOpen: false,
                 record: blankRecord(),
                 expense: blankExpense(),
+                adjustment: blankAdjustment(),
+
+                openAdjustmentCreate() {
+                    this.adjustment = blankAdjustment();
+                    this.adjustmentOpen = true;
+                },
+                openAdjustmentEdit(row) {
+                    this.adjustment = {
+                        mode: 'edit',
+                        action: config.adjustmentUpdateTemplate.replace('__ID__', row.id),
+                        branch_id: row.branch_id,
+                        adjustment_date: row.adjustment_date,
+                        amount: row.amount,
+                        reason: row.reason,
+                    };
+                    this.adjustmentOpen = true;
+                },
+                closeAdjustment() {
+                    this.adjustmentOpen = false;
+                },
+                deleteAdjustment(row) {
+                    if (!window.confirm('Delete this adjustment? The deducted amount goes back into the GCash total.')) {
+                        return;
+                    }
+                    this.postDelete(config.adjustmentDestroyTemplate.replace('__ID__', row.id));
+                },
 
                 openRecordCreate() {
                     this.record = blankRecord();

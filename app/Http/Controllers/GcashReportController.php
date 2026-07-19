@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\DayClosure;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
+use App\Models\GcashAdjustment;
 use App\Models\Sale;
 use App\Services\SaleService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -52,10 +53,20 @@ class GcashReportController extends Controller
             ? (float) $this->expensesQuery($branchId, $dateFrom, $dateTo)->sum('amount')
             : 0.0;
 
+        // Adjustments carry no order number either, so an order-number search excludes them
+        // for the same reason as expenses.
+        $adjustmentsTotal = $search === ''
+            ? (float) $this->adjustmentsQuery($branchId, $dateFrom, $dateTo)->sum('amount')
+            : 0.0;
+
         $totals = [
+            // Sales only — this is the figure day_closures.gcash_sales_total snapshots, and it
+            // must keep matching it. Adjustments are reported separately for exactly that reason.
             'gcash_sales_total' => $gcashSalesTotal,
             'gcash_expenses_total' => $gcashExpensesTotal,
-            'net_gcash' => $gcashSalesTotal - $gcashExpensesTotal,
+            // Already signed: a deduction is stored negative, so this adds.
+            'adjustments_total' => $adjustmentsTotal,
+            'net_gcash' => $gcashSalesTotal - $gcashExpensesTotal + $adjustmentsTotal,
             // The paginator already counted this exact filtered set.
             'transaction_count' => $sales->total(),
         ];
@@ -65,6 +76,7 @@ class GcashReportController extends Controller
             'categories' => ExpenseCategory::where('is_active', true)->orderBy('name')->get(),
             'sales' => $sales,
             'expenses' => $this->paginateExpenses($branchId, $dateFrom, $dateTo),
+            'adjustments' => $this->paginateAdjustments($branchId, $dateFrom, $dateTo),
             'totals' => $totals,
             'filters' => [
                 'branch_id' => $branchId,
@@ -176,6 +188,69 @@ class GcashReportController extends Controller
         $sale->delete();
 
         return back()->with('success', 'GCash record deleted.');
+    }
+
+    /**
+     * Record a correcting entry against GCash takings.
+     *
+     * Stored in its own table rather than as a sale or an expense: a correction is neither
+     * revenue nor a cost, so it must not reach the Sales page's order counts and averages or
+     * the expense reporting. Keeping it out of `sales` also means it cannot invalidate the
+     * gcash_sales_total a closed day was signed off with — which is why, unlike a GCash record,
+     * an adjustment needs no closed-day guard and can be dated freely.
+     */
+    public function storeAdjustment(Request $request): RedirectResponse
+    {
+        $validated = $request->validate($this->adjustmentRules());
+
+        GcashAdjustment::create([
+            'branch_id' => (int) $validated['branch_id'],
+            'adjustment_date' => $validated['adjustment_date'],
+            // The form posts a positive figure and the sign is applied here, so a missing or
+            // mistyped minus cannot silently record the opposite of what was intended.
+            'amount' => -1 * (float) $validated['amount'],
+            'reason' => $validated['reason'],
+            'recorded_by_user_id' => $request->user()->id,
+        ]);
+
+        return back()->with('success', 'Adjustment recorded.');
+    }
+
+    public function updateAdjustment(Request $request, GcashAdjustment $gcashAdjustment): RedirectResponse
+    {
+        $validated = $request->validate($this->adjustmentRules());
+
+        $gcashAdjustment->update([
+            'branch_id' => (int) $validated['branch_id'],
+            'adjustment_date' => $validated['adjustment_date'],
+            'amount' => -1 * (float) $validated['amount'],
+            'reason' => $validated['reason'],
+        ]);
+
+        return back()->with('success', 'Adjustment updated.');
+    }
+
+    public function destroyAdjustment(GcashAdjustment $gcashAdjustment): RedirectResponse
+    {
+        $gcashAdjustment->delete();
+
+        return back()->with('success', 'Adjustment deleted.');
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private function adjustmentRules(): array
+    {
+        return [
+            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'adjustment_date' => ['required', 'date'],
+            // Positive here; storeAdjustment applies the minus. Two decimal places for the
+            // same reason as a record: more precision would display rounded while the total
+            // summed the unrounded value.
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'min:0.01', 'max:9999999.99'],
+            'reason' => ['required', 'string', 'max:200'],
+        ];
     }
 
     /**
@@ -316,6 +391,37 @@ class GcashReportController extends Controller
             // whether a backslash in a string literal is itself an escape, so `!` is portable.
             $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $search);
             $query->whereRaw("sales.order_number LIKE ? ESCAPE '!'", ['%'.$escaped.'%']);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Paginated under its own page name so the three tables do not fight over `?page=`.
+     *
+     * @return LengthAwarePaginator<int, GcashAdjustment>
+     */
+    private function paginateAdjustments(?int $branchId, string $dateFrom, string $dateTo): LengthAwarePaginator
+    {
+        return $this->adjustmentsQuery($branchId, $dateFrom, $dateTo)
+            ->with(['branch:id,name', 'recordedBy:id,name'])
+            ->orderByDesc('adjustment_date')
+            ->orderByDesc('id')
+            ->paginate(self::PER_PAGE, ['*'], 'adjustment_page')
+            ->withQueryString();
+    }
+
+    /**
+     * @return Builder<GcashAdjustment>
+     */
+    private function adjustmentsQuery(?int $branchId, string $dateFrom, string $dateTo): Builder
+    {
+        $query = GcashAdjustment::query()
+            ->whereDate('adjustment_date', '>=', $dateFrom)
+            ->whereDate('adjustment_date', '<=', $dateTo);
+
+        if ($branchId !== null) {
+            $query->where('branch_id', $branchId);
         }
 
         return $query;
