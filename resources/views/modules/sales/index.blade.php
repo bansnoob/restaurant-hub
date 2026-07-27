@@ -33,7 +33,10 @@
             || $filters['search'] !== ''
             || ! empty($filters['statuses'])
             || $filters['payment_method'] !== ''
-            || ! empty($filters['branch_id']);
+            || ! empty($filters['branch_id'])
+            || ! empty($filters['category_id']);
+
+        $activeCategory = ! empty($filters['category_id']) ? $categories->firstWhere('id', $filters['category_id']) : null;
     @endphp
 
     <div
@@ -48,7 +51,9 @@
         <div class="rh-sal-topbar">
             <div>
                 <h1 class="rh-sal-title">Sales</h1>
-                <p class="rh-sal-sub">{{ strtoupper($rangeLabel) }}</p>
+                <p class="rh-sal-sub">
+                    {{ strtoupper($rangeLabel) }}@if ($activeCategory) · {{ strtoupper($activeCategory->name) }} ONLY @endif
+                </p>
             </div>
         </div>
 
@@ -64,7 +69,7 @@
             @endforeach
             <span class="rh-sal-preset-range">
                 <input type="hidden" name="preset" value="">
-                @foreach (['branch_id', 'search', 'payment_method'] as $f)
+                @foreach (['branch_id', 'category_id', 'search', 'payment_method'] as $f)
                     @if (! empty($filters[$f]))
                         <input type="hidden" name="{{ $f }}" value="{{ $filters[$f] }}">
                     @endif
@@ -154,6 +159,15 @@
                     @endforeach
                 </select>
 
+                <select name="category_id" class="rh-sal-select" @change="$refs.filterForm.requestSubmit()">
+                    <option value="">All categories</option>
+                    @foreach ($categories as $category)
+                        <option value="{{ $category->id }}" {{ (string) $filters['category_id'] === (string) $category->id ? 'selected' : '' }}>
+                            {{ $category->name }}
+                        </option>
+                    @endforeach
+                </select>
+
                 <select name="payment_method" class="rh-sal-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All payments</option>
                     <option value="cash"   {{ $filters['payment_method'] === 'cash'   ? 'selected' : '' }}>Cash</option>
@@ -215,8 +229,14 @@
                         <span class="rh-sal-pill {{ $typeClass }}">{{ str_replace('_', '-', $sale->order_type) }}</span>
                         <span class="rh-sal-pill {{ $statusClass }}">{{ $sale->status }}</span>
                         <span class="rh-sal-pay-badge {{ $payClass }}">{{ $sale->payment_method === 'gcash' ? 'GCash' : ucfirst($sale->payment_method) }}</span>
-                        <span class="rh-sal-items-count">{{ $sale->sale_items_count }} {{ \Illuminate\Support\Str::plural('item', $sale->sale_items_count) }}</span>
-                        <span class="rh-sal-row-total">₱{{ number_format($sale->grand_total, 2) }}</span>
+                        @if ($activeCategory)
+                            {{-- Category mode: the order's slice of this category, not its total. --}}
+                            <span class="rh-sal-items-count">{{ $sale->category_items }} of {{ $sale->sale_items_count }} {{ \Illuminate\Support\Str::plural('item', $sale->sale_items_count) }}</span>
+                            <span class="rh-sal-row-total" title="{{ $activeCategory->name }} portion of a ₱{{ number_format($sale->grand_total, 2) }} order">₱{{ number_format((float) $sale->category_line, 2) }}</span>
+                        @else
+                            <span class="rh-sal-items-count">{{ $sale->sale_items_count }} {{ \Illuminate\Support\Str::plural('item', $sale->sale_items_count) }}</span>
+                            <span class="rh-sal-row-total">₱{{ number_format($sale->grand_total, 2) }}</span>
+                        @endif
                     </div>
                 @endforeach
             </div>
