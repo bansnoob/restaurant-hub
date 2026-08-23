@@ -391,7 +391,18 @@
                                                         <span class="rh-inv-count-name" x-text="row.name"></span>
                                                         <span class="rh-inv-count-name-meta" x-text="(row.sku || '—') + ' · ' + row.unit + ' · ' + (row.branch_name || '—')"></span>
                                                     </td>
-                                                    <td class="num" x-text="formatStock(row.previous_quantity) + ' ' + row.unit"></td>
+                                                    <td class="num">
+                                                        <span x-text="formatStock(row.previous_quantity) + ' ' + row.unit"></span>
+                                                        {{-- Deliveries logged since the last count come from
+                                                             inventory_movements. They are folded into the count
+                                                             server-side, so they are shown read-only here and are
+                                                             already part of the Consumed column below. --}}
+                                                        <span
+                                                            class="rh-inv-count-name-meta"
+                                                            x-show="Number(row.pending_restock || 0) !== 0"
+                                                            x-text="(Number(row.pending_restock || 0) > 0 ? '+' : '-') + formatStock(Math.abs(Number(row.pending_restock || 0))) + ' logged'"
+                                                        ></span>
+                                                    </td>
                                                     <td class="num">
                                                         <input
                                                             type="number"
@@ -696,6 +707,9 @@
     </div>
 
     <script>
+        // Mirrors InventoryService::QUANTITY_SCALE (decimal(14,3)).
+        const QUANTITY_ROUNDING_FACTOR = 1000;
+
         function inventoryPage(config) {
             return {
                 startCountUrl: config.startCountUrl,
@@ -754,33 +768,40 @@
                     this.countOpen = false;
                     this.submitting = false;
                 },
+                /**
+                 * The baseline a count is measured against is
+                 * `previous_quantity + pending_restock`, which the server emits
+                 * pre-computed as `expected_quantity`. The Restocked input is the
+                 * operator's own figure and is ADDED on top of it, exactly as
+                 * InventoryService::insertCountEntries does — reading only
+                 * previous_quantity here would render a phantom gain on every
+                 * ingredient with a logged delivery.
+                 */
+                rowConsumed(row) {
+                    const baseline = row.expected_quantity === undefined || row.expected_quantity === null
+                        ? Number(row.previous_quantity || 0) + Number(row.pending_restock || 0)
+                        : Number(row.expected_quantity);
+                    const consumed = baseline + Number(row.restocked_quantity || 0) - Number(row.counted_quantity || 0);
+                    // Rounded to the schema's decimal(14,3) so float noise never
+                    // renders as a 1e-14 "gain".
+                    return Math.round(consumed * QUANTITY_ROUNDING_FACTOR) / QUANTITY_ROUNDING_FACTOR;
+                },
                 rowConsumeLabel(row) {
-                    const prev = Number(row.previous_quantity || 0);
-                    const restock = Number(row.restocked_quantity || 0);
-                    const counted = Number(row.counted_quantity || 0);
-                    const consumed = prev + restock - counted;
+                    const consumed = this.rowConsumed(row);
                     if (consumed === 0) return '0';
                     if (consumed < 0) return '+' + this.formatStock(Math.abs(consumed));
                     return this.formatStock(consumed);
                 },
                 rowConsumeClass(row) {
-                    const prev = Number(row.previous_quantity || 0);
-                    const restock = Number(row.restocked_quantity || 0);
-                    const counted = Number(row.counted_quantity || 0);
-                    const consumed = prev + restock - counted;
+                    const consumed = this.rowConsumed(row);
                     if (consumed === 0) return 'rh-inv-count-consume--zero';
                     if (consumed < 0) return 'rh-inv-count-consume--neg';
                     return '';
                 },
                 totalConsumptionLabel() {
-                    let positive = 0;
                     let count = 0;
                     for (const row of this.countDraft.ingredients) {
-                        const c = Number(row.previous_quantity || 0) + Number(row.restocked_quantity || 0) - Number(row.counted_quantity || 0);
-                        if (c > 0) {
-                            positive += c;
-                            count++;
-                        }
+                        if (this.rowConsumed(row) > 0) count++;
                     }
                     if (count === 0) return 'none';
                     return count + ' item' + (count === 1 ? '' : 's');

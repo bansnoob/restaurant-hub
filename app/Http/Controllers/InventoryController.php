@@ -8,16 +8,28 @@ use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\StockCount;
 use App\Models\StockCountEntry;
+use App\Services\InventoryService;
+use App\Support\Inventory\StockCountSessionRow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
+/**
+ * The owner-facing web inventory module.
+ *
+ * All inventory arithmetic lives in App\Services\InventoryService, shared with
+ * the mobile API controllers, so the two surfaces can never drift on
+ * consumption, previous quantities or the restock claim.
+ */
 class InventoryController extends Controller
 {
-    private const UNITS = ['pcs', 'g', 'kg', 'ml', 'l'];
+    private const UNITS = InventoryService::UNITS;
+
+    public function __construct(
+        private readonly InventoryService $inventory,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -28,63 +40,30 @@ class InventoryController extends Controller
         $search = trim((string) $request->query('search', ''));
         $lowOnly = (bool) $request->query('low_only', false);
 
-        $ingredientsQuery = Ingredient::with('branch');
+        // `include_inactive` is deliberately absent: the web index lists active
+        // and inactive ingredients together, as it always has.
+        $views = $this->inventory->listIngredients($this->branchId($branchFilter), [
+            'search' => $search,
+            'unit' => in_array($unitFilter, self::UNITS, true) ? $unitFilter : '',
+            'low_only' => $lowOnly,
+        ]);
 
-        if (! empty($branchFilter) && is_numeric($branchFilter)) {
-            $ingredientsQuery->where('branch_id', (int) $branchFilter);
-        }
-        if (in_array($unitFilter, self::UNITS, true)) {
-            $ingredientsQuery->where('unit', $unitFilter);
-        }
-        if ($search !== '') {
-            $needle = '%'.$search.'%';
-            $ingredientsQuery->where(function ($q) use ($needle) {
-                $q->where('name', 'like', $needle)
-                  ->orWhere('sku', 'like', $needle);
-            });
-        }
-
-        $ingredients = $ingredientsQuery->orderBy('name')->get();
-
-        $consumptionByIngredient = $this->latestConsumptionRates();
-
-        $ingredients = $ingredients->map(function (Ingredient $i) use ($consumptionByIngredient) {
-            $stats = $consumptionByIngredient[$i->id] ?? null;
-            $dailyRate = $stats['daily_rate'] ?? 0.0;
-            $daysRemaining = ($dailyRate > 0 && $i->current_stock > 0)
-                ? (float) $i->current_stock / $dailyRate
-                : null;
-            $i->daily_consumption = $dailyRate;
-            $i->days_remaining = $daysRemaining;
-            $i->last_counted_at = $stats['last_counted_at'] ?? null;
-            return $i;
-        });
-
-        if ($lowOnly) {
-            $ingredients = $ingredients->filter(fn ($i) => $i->isLowStock())->values();
-        }
+        $ingredients = $views->map->toDecoratedModel();
 
         $allIngredients = Ingredient::with('branch')->orderBy('name')->get();
-        $lowStock = $allIngredients->filter(fn ($i) => $i->isLowStock());
+        $lowStock = $allIngredients->filter(fn (Ingredient $i) => $i->isLowStock());
 
-        $latestCount = StockCount::orderByDesc('counted_at')->orderByDesc('id')->first();
-        $daysSinceLastCount = $latestCount ? (int) Carbon::parse($latestCount->counted_at)->diffInDays(now()) : null;
-
+        $summary = $this->inventory->summary(null);
         $stats = [
-            'total_items' => $allIngredients->count(),
-            'active_items' => $allIngredients->where('is_active', true)->count(),
-            'low_stock_count' => $lowStock->count(),
-            'days_since_last_count' => $daysSinceLastCount,
-            'last_count_at' => $latestCount?->counted_at?->toDateString(),
-            'counts_this_month' => StockCount::whereDate('counted_at', '>=', now()->startOfMonth()->toDateString())->count(),
+            'total_items' => $summary->totalItems,
+            'active_items' => $summary->activeItems,
+            'low_stock_count' => $summary->lowStockCount,
+            'days_since_last_count' => $summary->daysSinceLastCount,
+            'last_count_at' => $summary->lastCountAt,
+            'counts_this_month' => $summary->countsThisMonth,
         ];
 
-        $recentCounts = StockCount::with(['branch:id,name', 'recordedBy:id,name'])
-            ->withCount('entries')
-            ->orderByDesc('counted_at')
-            ->orderByDesc('id')
-            ->limit(10)
-            ->get();
+        $recentCounts = $this->inventory->recentCounts(null);
 
         $filters = [
             'search' => $search,
@@ -108,19 +87,9 @@ class InventoryController extends Controller
     {
         $ingredient->load('branch');
 
-        $entries = StockCountEntry::with('stockCount:id,counted_at,branch_id')
-            ->where('ingredient_id', $ingredient->id)
-            ->whereHas('stockCount')
-            ->orderByDesc('id')
-            ->limit(15)
-            ->get();
-
-        $consumptionByIngredient = $this->latestConsumptionRates();
-        $stats = $consumptionByIngredient[$ingredient->id] ?? null;
-        $dailyRate = $stats['daily_rate'] ?? 0.0;
-        $daysRemaining = ($dailyRate > 0 && (float) $ingredient->current_stock > 0)
-            ? (float) $ingredient->current_stock / $dailyRate
-            : null;
+        $view = $this->inventory->viewIngredient($ingredient);
+        $stats = $view->stats;
+        $entries = $this->inventory->ingredientHistory($ingredient);
 
         return response()->json([
             'ingredient' => [
@@ -134,11 +103,14 @@ class InventoryController extends Controller
                 'reorder_level' => (float) $ingredient->reorder_level,
                 'is_active' => (bool) $ingredient->is_active,
                 'is_low_stock' => $ingredient->isLowStock(),
-                'daily_consumption' => $dailyRate,
-                'days_remaining' => $daysRemaining,
-                'last_counted_at' => $stats['last_counted_at'] ?? null,
+                // The drawer has always received 0 (never null) for an
+                // ingredient with too few counts to derive a rate from.
+                'daily_consumption' => $stats->dailyConsumption ?? 0.0,
+                'days_remaining' => $stats->daysRemaining,
+                'last_counted_at' => $stats->lastCountedAt,
+                'pending_restock' => $stats->pendingRestock,
             ],
-            'history' => $entries->map(fn ($e) => [
+            'history' => $entries->map(fn (StockCountEntry $e) => [
                 'id' => $e->id,
                 'counted_at' => $e->stockCount?->counted_at?->toDateString(),
                 'counted_at_label' => $e->stockCount?->counted_at?->format('M j, Y'),
@@ -146,44 +118,41 @@ class InventoryController extends Controller
                 'restocked_quantity' => (float) $e->restocked_quantity,
                 'counted_quantity' => (float) $e->counted_quantity,
                 'consumption' => (float) $e->consumption,
-            ])->reverse()->values(),
+            ])->values(),
         ]);
     }
 
     public function startCount(Request $request): JsonResponse
     {
-        $branchFilter = $request->query('branch_id');
-        $branchesQuery = Branch::where('is_active', true)->orderBy('name');
-        $branches = $branchesQuery->get();
+        $branches = Branch::where('is_active', true)->orderBy('name')->get();
 
-        $ingredientsQuery = Ingredient::with('branch')->where('is_active', true);
-        if (! empty($branchFilter) && is_numeric($branchFilter)) {
-            $ingredientsQuery->where('branch_id', (int) $branchFilter);
-        }
-        $ingredients = $ingredientsQuery->orderBy('name')->get();
-
-        $previousByIngredient = $this->latestPreviousQuantities($ingredients->pluck('id')->all());
-
-        $rows = $ingredients->map(function (Ingredient $i) use ($previousByIngredient) {
-            $previous = $previousByIngredient[$i->id]['previous'] ?? (float) $i->current_stock;
-            return [
-                'ingredient_id' => $i->id,
-                'name' => $i->name,
-                'sku' => $i->sku,
-                'unit' => $i->unit,
-                'branch_id' => $i->branch_id,
-                'branch_name' => $i->branch?->name,
-                'reorder_level' => (float) $i->reorder_level,
-                'previous_quantity' => (float) $previous,
-                'restocked_quantity' => 0.0,
-                'counted_quantity' => (float) $previous,
-            ];
-        })->values();
+        // No branch_id in the query means EVERY branch — the blade fetches this
+        // endpoint bare and lets the owner pick the branch in the modal.
+        $session = $this->inventory->buildCountSession($this->branchId($request->query('branch_id')));
 
         return response()->json([
-            'today' => now()->toDateString(),
+            'today' => $session->today,
             'branches' => $branches,
-            'ingredients' => $rows,
+            'restock_cursor' => $session->restockCursor,
+            'ingredients' => array_map(fn (StockCountSessionRow $row): array => [
+                'ingredient_id' => $row->ingredientId,
+                'name' => $row->name,
+                'sku' => $row->sku,
+                'unit' => $row->unit,
+                'branch_id' => $row->branchId,
+                'branch_name' => $row->branchName,
+                'reorder_level' => $row->reorderLevel,
+                'previous_quantity' => $row->previousQuantity,
+                // The web count table's "Restocked" column is an EDITABLE
+                // operator field. It is seeded with 0 so a manually typed
+                // delivery is never added on top of the quantity already
+                // derived from inventory_movements; the derived figure is
+                // exposed read-only as pending_restock and folded in server-side.
+                'restocked_quantity' => 0.0,
+                'pending_restock' => $row->restockedQuantity,
+                'expected_quantity' => $row->expectedQuantity,
+                'counted_quantity' => $row->countedQuantity,
+            ], $session->rows),
         ]);
     }
 
@@ -200,40 +169,29 @@ class InventoryController extends Controller
             'entries.*.counted_quantity' => ['required', 'numeric', 'min:0'],
         ]);
 
-        DB::transaction(function () use ($validated, $request) {
-            $stockCount = StockCount::create([
-                'branch_id' => $validated['branch_id'],
-                'counted_at' => $validated['counted_at'],
-                'recorded_by_user_id' => $request->user()->id,
-                'notes' => $validated['notes'] ?? null,
-                'total_value' => 0,
-            ]);
+        $entries = [];
+        foreach ($validated['entries'] as $row) {
+            $entries[(int) $row['ingredient_id']] = [
+                'counted' => (float) $row['counted_quantity'],
+                // The operator's manual figure is an observation the movements
+                // ledger does not know about, so the service ADDS it to the
+                // claimed movement sum rather than replacing it.
+                'declared_restock' => isset($row['restocked_quantity'])
+                    ? (float) $row['restocked_quantity']
+                    : null,
+            ];
+        }
 
-            foreach ($validated['entries'] as $row) {
-                $ingredient = Ingredient::find($row['ingredient_id']);
-                if (! $ingredient) {
-                    continue;
-                }
-
-                $previous = (float) $row['previous_quantity'];
-                $restocked = (float) ($row['restocked_quantity'] ?? 0);
-                $counted = (float) $row['counted_quantity'];
-                $consumption = max(0.0, $previous + $restocked - $counted);
-
-                StockCountEntry::create([
-                    'stock_count_id' => $stockCount->id,
-                    'ingredient_id' => $ingredient->id,
-                    'previous_quantity' => $previous,
-                    'restocked_quantity' => $restocked,
-                    'counted_quantity' => $counted,
-                    'consumption' => $consumption,
-                    'unit_cost' => 0,
-                    'line_value' => 0,
-                ]);
-
-                $ingredient->update(['current_stock' => $counted]);
-            }
-        });
+        $this->inventory->recordCount(
+            (int) $validated['branch_id'],
+            (string) $validated['counted_at'],
+            $entries,
+            // null is the WEB sentinel: claim every unclaimed movement at
+            // commit time. The blade posts no cursor.
+            null,
+            $validated['notes'] ?? null,
+            $request->user(),
+        );
 
         return redirect()->route('inventory.index')->with('success', 'Stock count saved.');
     }
@@ -275,39 +233,19 @@ class InventoryController extends Controller
         ]);
     }
 
+    /**
+     * The "most recent count" guard is now BRANCH-SCOPED (it used to be global),
+     * matching the branch-scoped rollback the service performs. Deleting also
+     * un-claims the movements this count claimed, so a delivery is returned to
+     * the pending pool instead of being stranded.
+     */
     public function destroyCount(StockCount $stockCount): RedirectResponse
     {
-        $latest = StockCount::orderByDesc('counted_at')->orderByDesc('id')->first();
-        if (! $latest || $latest->id !== $stockCount->id) {
+        if (! $this->inventory->isLatestCount($stockCount)) {
             return back()->with('error', 'Only the most recent count can be deleted.');
         }
 
-        DB::transaction(function () use ($stockCount): void {
-            $previousCount = StockCount::where('counted_at', '<', $stockCount->counted_at)
-                ->orderByDesc('counted_at')
-                ->orderByDesc('id')
-                ->first();
-
-            $previousEntries = $previousCount
-                ? StockCountEntry::where('stock_count_id', $previousCount->id)->get()->keyBy('ingredient_id')
-                : collect();
-
-            $currentEntries = StockCountEntry::where('stock_count_id', $stockCount->id)->get();
-            foreach ($currentEntries as $entry) {
-                $ingredient = Ingredient::find($entry->ingredient_id);
-                if (! $ingredient) {
-                    continue;
-                }
-                $previousQuantity = $previousEntries->get($ingredient->id)?->counted_quantity;
-                if ($previousQuantity !== null) {
-                    $ingredient->update(['current_stock' => $previousQuantity]);
-                } else {
-                    $ingredient->update(['current_stock' => $entry->previous_quantity]);
-                }
-            }
-
-            $stockCount->delete();
-        });
+        $this->inventory->deleteCount($stockCount);
 
         return back()->with('success', 'Stock count deleted.');
     }
@@ -351,90 +289,11 @@ class InventoryController extends Controller
     }
 
     /**
-     * For each ingredient, compute the daily consumption rate from its
-     * most recent two stock count entries (consumption / days between counts).
-     *
-     * @return array<int, array{daily_rate: float, last_counted_at: ?string}>
+     * The query string gives us string|null; the service is strictly typed and
+     * treats null as "every branch".
      */
-    private function latestConsumptionRates(): array
+    private function branchId(mixed $raw): ?int
     {
-        $rows = DB::table('stock_count_entries as e')
-            ->join('stock_counts as c', 'e.stock_count_id', '=', 'c.id')
-            ->select('e.ingredient_id', 'e.consumption', 'c.counted_at')
-            ->orderBy('e.ingredient_id')
-            ->orderByDesc('c.counted_at')
-            ->orderByDesc('c.id')
-            ->get();
-
-        $byIngredient = [];
-        foreach ($rows as $row) {
-            $id = (int) $row->ingredient_id;
-            if (! isset($byIngredient[$id])) {
-                $byIngredient[$id] = [];
-            }
-            $byIngredient[$id][] = $row;
-        }
-
-        $result = [];
-        foreach ($byIngredient as $id => $entries) {
-            $latest = $entries[0] ?? null;
-            $previous = $entries[1] ?? null;
-            if (! $latest) {
-                continue;
-            }
-
-            $days = null;
-            if ($previous) {
-                $days = (int) Carbon::parse($previous->counted_at)->diffInDays(Carbon::parse($latest->counted_at));
-                if ($days <= 0) {
-                    $days = 1;
-                }
-            }
-
-            $dailyRate = $days ? max(0.0, ((float) $latest->consumption) / $days) : 0.0;
-
-            $result[$id] = [
-                'daily_rate' => round($dailyRate, 4),
-                'last_counted_at' => (string) $latest->counted_at,
-            ];
-        }
-
-        return $result;
+        return (is_string($raw) || is_int($raw)) && is_numeric($raw) ? (int) $raw : null;
     }
-
-    /**
-     * Returns the most recent counted_quantity per ingredient (used to pre-fill new counts).
-     *
-     * @param array<int, int> $ingredientIds
-     * @return array<int, array{previous: float, last_counted_at: string}>
-     */
-    private function latestPreviousQuantities(array $ingredientIds): array
-    {
-        if (empty($ingredientIds)) {
-            return [];
-        }
-
-        $rows = DB::table('stock_count_entries as e')
-            ->join('stock_counts as c', 'e.stock_count_id', '=', 'c.id')
-            ->whereIn('e.ingredient_id', $ingredientIds)
-            ->select('e.ingredient_id', 'e.counted_quantity', 'c.counted_at')
-            ->orderBy('e.ingredient_id')
-            ->orderByDesc('c.counted_at')
-            ->orderByDesc('c.id')
-            ->get();
-
-        $result = [];
-        foreach ($rows as $row) {
-            $id = (int) $row->ingredient_id;
-            if (! isset($result[$id])) {
-                $result[$id] = [
-                    'previous' => (float) $row->counted_quantity,
-                    'last_counted_at' => (string) $row->counted_at,
-                ];
-            }
-        }
-
-        return $result;
-    }
-
 }
