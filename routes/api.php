@@ -5,8 +5,11 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DayClosureController;
 use App\Http\Controllers\Api\V1\EmployeeController;
 use App\Http\Controllers\Api\V1\ExpenseController;
+use App\Http\Controllers\Api\V1\IngredientController;
 use App\Http\Controllers\Api\V1\MenuController;
 use App\Http\Controllers\Api\V1\OrderController;
+use App\Http\Controllers\Api\V1\RestockController;
+use App\Http\Controllers\Api\V1\StockCountController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -43,6 +46,27 @@ Route::prefix('v1')->group(function () {
             Route::delete('/expenses/{expense}', [ExpenseController::class, 'destroy']);
             Route::get('/expense-categories', [ExpenseController::class, 'categories']);
         });
+
+        // Inventory. Throttled because a stock count submit is a large batch
+        // and there is no global API rate limit in this app.
+        Route::middleware(['role:owner|cashier', 'throttle:60,1'])
+            ->prefix('inventory')
+            ->group(function () {
+                Route::get('/summary', [IngredientController::class, 'summary']);
+
+                Route::get('/ingredients', [IngredientController::class, 'index']);
+                Route::post('/ingredients', [IngredientController::class, 'store']);
+                Route::get('/ingredients/{ingredient}', [IngredientController::class, 'show']);
+                Route::put('/ingredients/{ingredient}', [IngredientController::class, 'update']);
+                Route::delete('/ingredients/{ingredient}', [IngredientController::class, 'destroy']);
+
+                Route::post('/restocks', [RestockController::class, 'store']);
+
+                // /counts/start MUST stay above any /counts/{id} route.
+                Route::get('/counts/start', [StockCountController::class, 'start']);
+                Route::get('/counts', [StockCountController::class, 'index']);
+                Route::post('/counts', [StockCountController::class, 'store']);
+            });
 
         Route::middleware('role:owner|cashier')->group(function () {
             Route::get('/day-close/preview', [DayClosureController::class, 'preview']);
