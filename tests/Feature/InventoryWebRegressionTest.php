@@ -97,23 +97,223 @@ class InventoryWebRegressionTest extends TestCase
             ->assertOk();
     }
 
-    public function test_start_count_walks_every_branch_when_none_is_given(): void
+    /**
+     * The page's behaviour lives in resources/js/inventory/inventory-page.js and
+     * is covered by tests/js/inventory-page.test.js. What the blade still owns
+     * is the wiring INTO that component, so this pins the handshake: the config
+     * keys the component reads, the intercepted branch picker (no bare x-model,
+     * which would let the picker drift from the loaded rows), and no reintroduced
+     * inline copy of the component that a test runner could never reach.
+     */
+    public function test_the_count_modal_is_wired_to_the_extracted_component(): void
+    {
+        $this->ingredient();
+
+        $html = $this->actingAs($this->owner)->get(route('inventory.index'))->assertOk()->getContent();
+
+        $this->assertStringContainsString('x-data="inventoryPage(', $html);
+        foreach (['branches:', 'filterBranchId:', 'today:', 'startCountUrl:'] as $key) {
+            $this->assertStringContainsString($key, $html, "the component's {$key} config key was dropped");
+        }
+        $this->assertStringContainsString('onCountBranchChange($event)', $html);
+        $this->assertStringNotContainsString('x-model="countDraft.branch_id"', $html);
+        // previous_quantity is recomputed server-side and validated `sometimes`;
+        // the hidden input that posted it was dead weight.
+        $this->assertStringNotContainsString('[previous_quantity]', $html);
+        // The component must NOT come back inline: that is what made the
+        // branch-scoping logic untestable in the first place.
+        $this->assertStringNotContainsString('function inventoryPage', $html);
+    }
+
+    /**
+     * CLAUDE.md caps a file at 800 lines, and the blade blew past it by carrying
+     * ~300 lines of application JS. That is not cosmetic: inline JS is
+     * unreachable by any test runner, which is exactly why a revert of the
+     * front-end half of the branch-scoping fix used to pass the suite.
+     */
+    public function test_the_inventory_blade_stays_within_the_file_size_cap(): void
+    {
+        $blade = resource_path('views/modules/inventory/index.blade.php');
+        $lines = count(file($blade));
+
+        $this->assertLessThanOrEqual(800, $lines, "the inventory blade grew back to {$lines} lines");
+        $this->assertStringNotContainsString('<script', file_get_contents($blade));
+        $this->assertFileExists(resource_path('js/inventory/inventory-page.js'));
+    }
+
+    /**
+     * The count modal is branch-scoped: it fetches ?branch_id=<selected> and
+     * refetches when the picker changes. Without the scope the table rendered a
+     * hidden entries[i][ingredient_id] for EVERY branch, and those rows posted
+     * under whichever branch happened to be selected.
+     */
+    public function test_start_count_scoped_to_a_branch_returns_only_that_branchs_ingredients(): void
+    {
+        $other = Branch::factory()->create(['is_active' => true]);
+        $mine = $this->ingredient(['name' => 'Mine']);
+        Ingredient::factory()->create(['branch_id' => $other->id, 'is_active' => true, 'name' => 'Theirs']);
+
+        $rows = $this->actingAs($this->owner)
+            ->getJson(route('inventory.counts.start', ['branch_id' => $this->branch->id]))
+            ->assertOk()
+            ->json('ingredients');
+
+        $this->assertCount(1, $rows);
+        $this->assertSame($mine->id, $rows[0]['ingredient_id']);
+        $this->assertSame($this->branch->id, $rows[0]['branch_id']);
+    }
+
+    /**
+     * A1: the web count could write entries for ANOTHER branch's ingredients.
+     * The count then claimed that branch's movements, overwrote its
+     * current_stock, and a later delete rolled it back to a foreign baseline.
+     */
+    public function test_a_web_count_rejects_entries_from_another_branch(): void
+    {
+        $mine = $this->ingredient();
+        $other = Branch::factory()->create(['is_active' => true]);
+        $theirs = Ingredient::factory()->create([
+            'branch_id' => $other->id,
+            'current_stock' => 40,
+            'is_active' => true,
+        ]);
+        app(InventoryService::class)->recordRestock($theirs, 5, null, null, $this->owner);
+
+        $this->actingAs($this->owner)->postJson(route('inventory.counts.store'), [
+            'branch_id' => $this->branch->id,
+            'counted_at' => now()->toDateString(),
+            'entries' => [
+                ['ingredient_id' => $mine->id, 'previous_quantity' => 100, 'restocked_quantity' => 0, 'counted_quantity' => 90],
+                ['ingredient_id' => $theirs->id, 'previous_quantity' => 45, 'restocked_quantity' => 0, 'counted_quantity' => 30],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors('entries.1.ingredient_id');
+
+        // Nothing at all was written — not even the same-branch row.
+        $this->assertDatabaseCount('stock_counts', 0);
+        $this->assertDatabaseMissing('stock_count_entries', ['ingredient_id' => $theirs->id]);
+        $this->assertDatabaseMissing('stock_count_entries', ['ingredient_id' => $mine->id]);
+        // The other branch's delivery is still unclaimed and its stock untouched.
+        $this->assertNull(InventoryMovement::sole()->reference_type);
+        $this->assertSame(45.0, (float) $theirs->fresh()->current_stock);
+    }
+
+    /** The blade posts a real form, so the rejection has to come back as a flash error. */
+    public function test_a_form_posted_foreign_ingredient_bounces_back_without_writing(): void
+    {
+        $other = Branch::factory()->create(['is_active' => true]);
+        $theirs = Ingredient::factory()->create(['branch_id' => $other->id, 'is_active' => true]);
+
+        $this->actingAs($this->owner)->post(route('inventory.counts.store'), [
+            'branch_id' => $this->branch->id,
+            'counted_at' => now()->toDateString(),
+            'entries' => [
+                ['ingredient_id' => $theirs->id, 'previous_quantity' => 10, 'restocked_quantity' => 0, 'counted_quantity' => 5],
+            ],
+        ])->assertRedirect()->assertSessionHasErrors('entries.0.ingredient_id');
+
+        $this->assertDatabaseCount('stock_counts', 0);
+        $this->assertDatabaseMissing('stock_count_entries', ['ingredient_id' => $theirs->id]);
+    }
+
+    /**
+     * The service's last-line branch guard has to reach the operator as a
+     * TOAST, not as a raw error page. It is reachable from the browser form:
+     * ingredients are HARD deleted, so one can vanish between the boundary's
+     * allow-list query and the locking read inside the transaction. abort(422)
+     * rendered Laravel's error page and lost every quantity typed with no
+     * explanation.
+     */
+    public function test_an_ingredient_deleted_mid_count_bounces_back_as_a_flash_error(): void
+    {
+        $ingredient = $this->ingredient();
+
+        // recordCount() locks the Branch row first, so this fires INSIDE the
+        // transaction, after the boundary built its allow-list — the real race.
+        Branch::retrieved(function () use ($ingredient): void {
+            Ingredient::whereKey($ingredient->id)->delete();
+        });
+
+        $this->actingAs($this->owner)->post(route('inventory.counts.store'), [
+            'branch_id' => $this->branch->id,
+            'counted_at' => now()->toDateString(),
+            'entries' => [[
+                'ingredient_id' => $ingredient->id,
+                'restocked_quantity' => 0,
+                'counted_quantity' => 90,
+            ]],
+        ])->assertRedirect()->assertSessionHasErrors('entries');
+
+        $this->assertDatabaseCount('stock_counts', 0);
+        $this->assertDatabaseCount('stock_count_entries', 0);
+    }
+
+    /** The shape production actually uses: one branch, open the modal, save. */
+    public function test_the_single_branch_happy_path_still_records_end_to_end(): void
+    {
+        $ingredient = $this->ingredient();
+        app(InventoryService::class)->recordRestock($ingredient, 20, null, null, $this->owner);
+
+        $row = $this->actingAs($this->owner)
+            ->getJson(route('inventory.counts.start', ['branch_id' => $this->branch->id]))
+            ->assertOk()
+            ->json('ingredients.0');
+
+        $this->actingAs($this->owner)->post(route('inventory.counts.store'), [
+            'branch_id' => $this->branch->id,
+            'counted_at' => now()->toDateString(),
+            'entries' => [[
+                'ingredient_id' => $row['ingredient_id'],
+                'previous_quantity' => $row['previous_quantity'],
+                'restocked_quantity' => $row['restocked_quantity'],
+                'counted_quantity' => 115,
+            ]],
+        ])->assertRedirect(route('inventory.index'))->assertSessionHas('success', 'Stock count saved.');
+
+        $entry = StockCountEntry::sole();
+        $this->assertSame($ingredient->id, (int) $entry->ingredient_id);
+        $this->assertSame(100.0, (float) $entry->previous_quantity);
+        $this->assertSame(20.0, (float) $entry->restocked_quantity);
+        $this->assertSame(5.0, (float) $entry->consumption);
+        $this->assertSame(115.0, (float) $ingredient->fresh()->current_stock);
+        $this->assertSame('stock_count', InventoryMovement::sole()->reference_type);
+    }
+
+    /**
+     * A branchless session used to walk EVERY branch. Nothing could submit it
+     * (every foreign row is now rejected at the boundary) and it handed any
+     * inventory user the other branches' ingredient names, SKUs and stock
+     * levels, so the endpoint requires a branch instead of inventing one.
+     */
+    public function test_start_count_refuses_to_build_a_branchless_session(): void
     {
         $other = Branch::factory()->create(['is_active' => true]);
         $this->ingredient(['name' => 'Aaa']);
         Ingredient::factory()->create(['branch_id' => $other->id, 'is_active' => true, 'name' => 'Bbb']);
 
-        $payload = $this->actingAs($this->owner)
+        $this->actingAs($this->owner)
             ->getJson(route('inventory.counts.start'))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('branch_id');
+    }
+
+    public function test_start_count_ships_the_keys_the_component_reads_and_nothing_else(): void
+    {
+        $this->ingredient(['name' => 'Aaa']);
+
+        $payload = $this->actingAs($this->owner)
+            ->getJson(route('inventory.counts.start', ['branch_id' => $this->branch->id]))
             ->assertOk()
             ->json();
 
-        $this->assertArrayHasKey('branches', $payload);
         $this->assertArrayHasKey('today', $payload);
-        $this->assertCount(2, $payload['ingredients']);
+        $this->assertArrayHasKey('restock_cursor', $payload);
+        // The page already owns the branch list as an Alpine config key; a
+        // second copy in every session response is dead payload, and it is
+        // refetched on every branch switch.
+        $this->assertArrayNotHasKey('branches', $payload);
 
         foreach ($payload['ingredients'] as $row) {
-            // blade line 392 renders row.branch_name in the row meta line.
+            // The component renders row.branch_name in the row meta line.
             $this->assertNotNull($row['branch_name']);
             $this->assertArrayHasKey('previous_quantity', $row);
             $this->assertArrayHasKey('counted_quantity', $row);
@@ -126,7 +326,7 @@ class InventoryWebRegressionTest extends TestCase
         app(InventoryService::class)->recordRestock($ingredient, 12, null, null, $this->owner);
 
         $row = $this->actingAs($this->owner)
-            ->getJson(route('inventory.counts.start'))
+            ->getJson(route('inventory.counts.start', ['branch_id' => $this->branch->id]))
             ->assertOk()
             ->json('ingredients.0');
 
@@ -149,7 +349,7 @@ class InventoryWebRegressionTest extends TestCase
         app(InventoryService::class)->recordRestock($ingredient, 30, null, null, $this->owner);
 
         $row = $this->actingAs($this->owner)
-            ->getJson(route('inventory.counts.start'))
+            ->getJson(route('inventory.counts.start', ['branch_id' => $this->branch->id]))
             ->assertOk()
             ->json('ingredients.0');
 

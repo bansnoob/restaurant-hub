@@ -8,13 +8,12 @@ use App\Http\Controllers\Api\V1\Concerns\ResolvesBranch;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\StockCountResource;
 use App\Http\Resources\V1\StockCountSessionResource;
-use App\Models\Ingredient;
 use App\Models\StockCount;
 use App\Services\InventoryService;
+use App\Support\Inventory\CountEntryRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Validation\Rule;
 
 class StockCountController extends Controller
 {
@@ -101,24 +100,11 @@ class StockCountController extends Controller
      */
     private function validateEntries(Request $request, int $branchId): array
     {
-        // One query for the whole allow-list instead of one `exists` round trip
-        // per row. `is_active` is deliberately NOT part of the constraint: an
-        // ingredient deactivated mid-session must still record, rather than
-        // 422-ing an hour of counting.
-        $allowed = Ingredient::where('branch_id', $branchId)->pluck('id')->all();
+        // Shared with the web module — see App\Support\Inventory\CountEntryRules
+        // for why the branch allow-list has exactly one definition.
+        $rules = CountEntryRules::for($branchId);
 
-        $validated = $request->validate([
-            'entries' => ['required', 'array', 'min:1', 'max:'.InventoryService::MAX_COUNT_ENTRIES],
-            'entries.*.ingredient_id' => ['required', 'integer', 'distinct', Rule::in($allowed)],
-            'entries.*.counted_quantity' => [
-                'required', 'numeric', 'min:0',
-                'max:'.InventoryService::MAX_QUANTITY,
-                'decimal:0,'.InventoryService::QUANTITY_SCALE,
-            ],
-            // Accepted for wire compatibility with the web blade, then ignored.
-            'entries.*.previous_quantity' => ['sometimes', 'numeric'],
-            'entries.*.restocked_quantity' => ['sometimes', 'numeric'],
-        ]);
+        $validated = $request->validate($rules->rules(), $rules->messages());
 
         $result = [];
         foreach ($validated['entries'] as $row) {

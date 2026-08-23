@@ -22,6 +22,8 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+use LogicException;
 
 /**
  * The single source of truth for inventory arithmetic, shared by the legacy
@@ -268,7 +270,11 @@ final class InventoryService
      * pending sums share ONE transaction so a movement landing mid-build can
      * never make them disagree.
      *
-     * $branchId null = every branch (the web flow).
+     * $branchId null = every branch. That is the BARE-call contract, kept for
+     * direct service callers only: BOTH HTTP surfaces always pass a branch —
+     * the web count modal because a count may contain only its own branch's
+     * ingredients (InventoryController::startCount now requires branch_id), and
+     * the mobile API because ResolvesBranch::resolveBranchId() returns an int.
      */
     public function buildCountSession(?int $branchId): StockCountSession
     {
@@ -434,7 +440,8 @@ final class InventoryService
 
             // Lock the rows we are about to rewrite so previousQuantities /
             // pendingRestocks / the current_stock write all see current data.
-            $ingredients = Ingredient::whereIn('id', $ids)->lockForUpdate()->get()->keyBy('id');
+            // BRANCH-SCOPED: see lockCountIngredients().
+            $ingredients = $this->lockCountIngredients($branchId, $ids);
 
             $cursor = $restockCursor === null
                 ? null
@@ -474,6 +481,12 @@ final class InventoryService
      * Reverts current_stock to the prior count (or the entry's own
      * previous_quantity), un-claims the movements this count claimed so the
      * deliveries return to the pending pool, then deletes the count.
+     *
+     * Deliberately NOT branch-guarded: it only unwinds rows recordCount wrote,
+     * and recordCount can no longer write an entry outside the count's branch.
+     * Aborting here on a legacy cross-branch entry would strand such a count as
+     * undeletable — leaving the corruption in place instead of letting the
+     * owner roll it back.
      */
     public function deleteCount(StockCount $stockCount): void
     {
@@ -510,6 +523,50 @@ final class InventoryService
     // =====================================================================
     // Internals
     // =====================================================================
+
+    /**
+     * Lock the counted rows, scoped to the count's OWN branch.
+     *
+     * A submitted ingredient that belongs to another branch is REJECTED, never
+     * skipped. Skipping would let the caller believe the row was counted when
+     * it was dropped; accepting it (the behaviour before this guard) wrote a
+     * branch-B entry under a branch-A count, so MovementLedger::claim() stamped
+     * B's unclaimed deliveries as claimed by A, settleStockAfterCount()
+     * overwrote B's current_stock, and deleteCount()'s branch-scoped rollback
+     * then reverted B to a branch-A baseline — silently, with no error shown.
+     *
+     * Both surfaces converge here (web InventoryController::storeCount and
+     * Api\V1\StockCountController::store), so neither can bypass the guard.
+     *
+     * @param  list<int>  $ids
+     * @return Collection<int, Ingredient>
+     */
+    private function lockCountIngredients(int $branchId, array $ids): Collection
+    {
+        $ingredients = Ingredient::where('branch_id', $branchId)
+            ->whereIn('id', $ids)
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+
+        // Also catches an id that does not exist at all — validated at the
+        // boundary, but an ingredient can be hard-deleted between that
+        // allow-list query and this locking read.
+        $foreign = array_values(array_diff($ids, $ingredients->keys()->map('intval')->all()));
+
+        if ($foreign !== []) {
+            // A ValidationException, not abort(422): the web module posts a real
+            // browser form, and only a ValidationException redirects back with
+            // $errors for the page's toast to render. JSON callers still get 422.
+            throw ValidationException::withMessages([
+                'entries' => 'These ingredients are no longer part of the branch being counted: '
+                    .implode(', ', $foreign)
+                    .'. Reopen the count for the right branch and try again.',
+            ]);
+        }
+
+        return $ingredients;
+    }
 
     /**
      * @param  Collection<int, Ingredient>  $ingredients
@@ -626,8 +683,15 @@ final class InventoryService
 
         foreach ($entries as $ingredientId => $entry) {
             $ingredient = $ingredients->get((int) $ingredientId);
+            // lockCountIngredients() rejects the whole count unless every id is
+            // present, so this cannot happen. It throws rather than `continue`s
+            // because silently dropping a row the operator counted — while still
+            // reporting the count as saved — is the exact failure that guard
+            // exists to prevent.
             if ($ingredient === null) {
-                continue;
+                throw new LogicException(
+                    'insertCountEntries received an ingredient the branch guard should have rejected: '.$ingredientId
+                );
             }
 
             $id = (int) $ingredient->id;

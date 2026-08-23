@@ -9,6 +9,7 @@ use App\Models\Ingredient;
 use App\Models\StockCount;
 use App\Models\StockCountEntry;
 use App\Services\InventoryService;
+use App\Support\Inventory\CountEntryRules;
 use App\Support\Inventory\StockCountSessionRow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -124,15 +125,22 @@ class InventoryController extends Controller
 
     public function startCount(Request $request): JsonResponse
     {
-        $branches = Branch::where('is_active', true)->orderBy('name')->get();
+        // branch_id is REQUIRED: a count may only contain its own branch's
+        // ingredients, so there is no such thing as a branchless session. The
+        // blade sends ?branch_id=<selected> and refetches when the modal's
+        // picker changes. A bare call used to walk every branch, which both
+        // leaked other branches' stock levels and built a session that can no
+        // longer be submitted.
+        $validated = $request->validate([
+            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+        ]);
 
-        // No branch_id in the query means EVERY branch — the blade fetches this
-        // endpoint bare and lets the owner pick the branch in the modal.
-        $session = $this->inventory->buildCountSession($this->branchId($request->query('branch_id')));
+        $session = $this->inventory->buildCountSession((int) $validated['branch_id']);
 
         return response()->json([
             'today' => $session->today,
-            'branches' => $branches,
+            // The branch list is NOT repeated here: the page already owns it as
+            // the `branches` Alpine config key rendered by the blade.
             'restock_cursor' => $session->restockCursor,
             'ingredients' => array_map(fn (StockCountSessionRow $row): array => [
                 'ingredient_id' => $row->ingredientId,
@@ -158,16 +166,19 @@ class InventoryController extends Controller
 
     public function storeCount(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
+        // Two-phase, matching Api\V1\StockCountController::store(): the branch
+        // has to be resolved BEFORE the entries array, because every
+        // ingredient_id is validated against that branch's allow-list. A bare
+        // `exists:ingredients,id` accepted another branch's ingredient and let
+        // it be written under this branch's count.
+        $scalars = $request->validate([
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
             'counted_at' => ['required', 'date'],
             'notes' => ['nullable', 'string', 'max:1000'],
-            'entries' => ['required', 'array', 'min:1'],
-            'entries.*.ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
-            'entries.*.previous_quantity' => ['required', 'numeric', 'min:0'],
-            'entries.*.restocked_quantity' => ['nullable', 'numeric', 'min:0'],
-            'entries.*.counted_quantity' => ['required', 'numeric', 'min:0'],
         ]);
+
+        $branchId = (int) $scalars['branch_id'];
+        $validated = $this->validateCountEntries($request, $branchId);
 
         $entries = [];
         foreach ($validated['entries'] as $row) {
@@ -183,17 +194,36 @@ class InventoryController extends Controller
         }
 
         $this->inventory->recordCount(
-            (int) $validated['branch_id'],
-            (string) $validated['counted_at'],
+            $branchId,
+            (string) $scalars['counted_at'],
             $entries,
             // null is the WEB sentinel: claim every unclaimed movement at
             // commit time. The blade posts no cursor.
             null,
-            $validated['notes'] ?? null,
+            $scalars['notes'] ?? null,
             $request->user(),
         );
 
         return redirect()->route('inventory.index')->with('success', 'Stock count saved.');
+    }
+
+    /**
+     * Validate the posted rows against the counted branch's ingredients.
+     *
+     * The rules themselves live in App\Support\Inventory\CountEntryRules,
+     * shared with the mobile API so the branch allow-list can never drift
+     * between the two surfaces.
+     *
+     * @return array{entries: array<int, array<string, mixed>>}
+     */
+    private function validateCountEntries(Request $request, int $branchId): array
+    {
+        $rules = CountEntryRules::for($branchId);
+
+        /** @var array{entries: array<int, array<string, mixed>>} $validated */
+        $validated = $request->validate($rules->rules(), $rules->messages());
+
+        return $validated;
     }
 
     public function showCount(StockCount $stockCount): JsonResponse
