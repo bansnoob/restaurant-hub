@@ -16,7 +16,7 @@
  * This is the SOURCE of truth — the hub's public/pos/sw.js is overwritten from
  * here on each web build, so bump it HERE.
  */
-const CACHE = 'rhub-shell-v9';
+const CACHE = 'rhub-shell-v10';
 
 // e.g. "/pos/sw.js" -> "/pos" ; "/sw.js" -> ""
 const BASE = self.location.pathname.replace(/\/sw\.js$/, '');
