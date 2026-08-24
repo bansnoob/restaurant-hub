@@ -15,7 +15,9 @@ class UserResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
-            'branch_id' => $this->branch_id,
+            // The effective branch, matching User::resolveBranchId() — a cashier linked
+            // to a branch only through their employee record has users.branch_id NULL.
+            'branch_id' => $this->resolveBranchId(),
             'roles' => $this->whenLoaded('roles', fn () => $this->roles->pluck('name')),
         ];
     }

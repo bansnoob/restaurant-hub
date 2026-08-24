@@ -7,6 +7,11 @@
         $hasActiveFilters = $filters['search'] !== '' || ! empty($filters['branch_id']) || $filters['unit'] !== '' || $filters['low_only'];
         $unitOptions = ['pcs', 'kg', 'g', 'l', 'ml'];
 
+        // The count modal fetches ONE branch's session at a time, so it needs
+        // the branch list as data (not just as <option> markup) to pick a sane
+        // default and to validate a switch.
+        $branchOptions = $branches->map(fn ($b) => ['id' => (int) $b->id, 'name' => $b->name])->values();
+
         $allIngredientsPayload = $allIngredients->map(fn ($i) => [
             'id' => $i->id,
             'name' => $i->name,
@@ -27,6 +32,9 @@
             updateUrlTemplate: @js(route('inventory.update', ['ingredient' => '__INGREDIENT__'])),
             csrfToken: @js(csrf_token()),
             allIngredients: @js($allIngredientsPayload),
+            branches: @js($branchOptions),
+            filterBranchId: @js((string) ($filters['branch_id'] ?? '')),
+            today: @js(now()->toDateString()),
         })"
         @keydown.escape.window="closeAll()"
     >
@@ -335,7 +343,7 @@
         {{-- Start Count drawer --}}
         <template x-if="countOpen">
             <div class="rm-overlay" @click.self="closeCount()">
-                <form method="POST" :action="storeCountUrl" class="rm-drawer rm-drawer--xl" @submit="submitting = true">
+                <form method="POST" :action="storeCountUrl" class="rm-drawer rm-drawer--xl" @submit="onCountSubmit($event)">
                     @csrf
                     <div class="rm-drawer-head">
                         <div>
@@ -350,10 +358,16 @@
                         </template>
                         <template x-if="!countLoading">
                             <div>
+                                <div x-show="countError" class="rh-inv-detail-loading" style="padding: 0.75rem 1rem; color: var(--rh-danger-solid);" x-text="countError"></div>
+
                                 <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
                                     <div class="rm-field">
                                         <label class="rm-field-label">Branch</label>
-                                        <select name="branch_id" class="rm-input" x-model="countDraft.branch_id" required>
+                                        {{-- A count belongs to ONE branch, so switching branch REFETCHES
+                                             the session. x-model is deliberately not used: the change has
+                                             to be intercepted so a dirty draft can be confirmed first and
+                                             the picker put back when the owner declines. --}}
+                                        <select name="branch_id" class="rm-input" :value="countDraft.branch_id" @change="onCountBranchChange($event)" required>
                                             <option value="">Select branch</option>
                                             @foreach ($branches as $branch)
                                                 <option value="{{ $branch->id }}">{{ $branch->name }}</option>
@@ -387,11 +401,21 @@
                                                 <tr>
                                                     <td>
                                                         <input type="hidden" :name="'entries[' + idx + '][ingredient_id]'" :value="row.ingredient_id">
-                                                        <input type="hidden" :name="'entries[' + idx + '][previous_quantity]'" :value="row.previous_quantity">
                                                         <span class="rh-inv-count-name" x-text="row.name"></span>
                                                         <span class="rh-inv-count-name-meta" x-text="(row.sku || '—') + ' · ' + row.unit + ' · ' + (row.branch_name || '—')"></span>
                                                     </td>
-                                                    <td class="num" x-text="formatStock(row.previous_quantity) + ' ' + row.unit"></td>
+                                                    <td class="num">
+                                                        <span x-text="formatStock(row.previous_quantity) + ' ' + row.unit"></span>
+                                                        {{-- Deliveries logged since the last count come from
+                                                             inventory_movements. They are folded into the count
+                                                             server-side, so they are shown read-only here and are
+                                                             already part of the Consumed column below. --}}
+                                                        <span
+                                                            class="rh-inv-count-name-meta"
+                                                            x-show="Number(row.pending_restock || 0) !== 0"
+                                                            x-text="(Number(row.pending_restock || 0) > 0 ? '+' : '-') + formatStock(Math.abs(Number(row.pending_restock || 0))) + ' logged'"
+                                                        ></span>
+                                                    </td>
                                                     <td class="num">
                                                         <input
                                                             type="number"
@@ -421,7 +445,7 @@
                                             </template>
                                             <template x-if="countDraft.ingredients.length === 0">
                                                 <tr>
-                                                    <td colspan="5" style="text-align: center; padding: 2rem; color: var(--rh-text-muted);">No ingredients in this branch.</td>
+                                                    <td colspan="5" style="text-align: center; padding: 2rem; color: var(--rh-text-muted);" x-text="countEmptyStateMessage()"></td>
                                                 </tr>
                                             </template>
                                         </tbody>
@@ -439,7 +463,7 @@
                         <div></div>
                         <div class="rm-drawer-foot-right">
                             <button type="button" class="rm-btn rm-btn--ghost" @click="closeCount()">Cancel</button>
-                            <button type="submit" class="rm-btn rm-btn--primary" :disabled="submitting || countDraft.ingredients.length === 0">Save count</button>
+                            <button type="submit" class="rm-btn rm-btn--primary" :disabled="submitting || countLoading || ! countDraft.branch_id || countDraft.ingredients.length === 0">Save count</button>
                         </div>
                     </div>
                 </form>
@@ -694,197 +718,4 @@
             </div>
         </template>
     </div>
-
-    <script>
-        function inventoryPage(config) {
-            return {
-                startCountUrl: config.startCountUrl,
-                storeCountUrl: config.storeCountUrl,
-                countShowUrlTemplate: config.countShowUrlTemplate,
-                countDestroyUrlTemplate: config.countDestroyUrlTemplate,
-                ingredientShowUrlTemplate: config.ingredientShowUrlTemplate,
-                updateUrlTemplate: config.updateUrlTemplate,
-                csrfToken: config.csrfToken,
-                allIngredients: config.allIngredients,
-                countOpen: false,
-                countLoading: false,
-                countDraft: { branch_id: '', counted_at: '', notes: '', ingredients: [] },
-                countDetailOpen: false,
-                countDetail: null,
-                ingredientOpen: false,
-                ingredientData: null,
-                ingredientController: null,
-                formOpen: false,
-                submitting: false,
-                form: {
-                    mode: 'create',
-                    action: '',
-                    branch_id: '',
-                    name: '',
-                    sku: '',
-                    unit: 'pcs',
-                    current_stock: '0',
-                    reorder_level: '0',
-                    is_active: true,
-                },
-                async openStartCount() {
-                    this.countOpen = true;
-                    this.countLoading = true;
-                    this.submitting = false;
-                    try {
-                        const res = await fetch(this.startCountUrl, {
-                            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-                        });
-                        if (!res.ok) throw new Error('Failed to load');
-                        const data = await res.json();
-                        this.countDraft = {
-                            branch_id: '',
-                            counted_at: data.today,
-                            notes: '',
-                            ingredients: data.ingredients,
-                        };
-                    } catch (err) {
-                        this.countOpen = false;
-                        console.error(err);
-                    } finally {
-                        this.countLoading = false;
-                    }
-                },
-                closeCount() {
-                    this.countOpen = false;
-                    this.submitting = false;
-                },
-                rowConsumeLabel(row) {
-                    const prev = Number(row.previous_quantity || 0);
-                    const restock = Number(row.restocked_quantity || 0);
-                    const counted = Number(row.counted_quantity || 0);
-                    const consumed = prev + restock - counted;
-                    if (consumed === 0) return '0';
-                    if (consumed < 0) return '+' + this.formatStock(Math.abs(consumed));
-                    return this.formatStock(consumed);
-                },
-                rowConsumeClass(row) {
-                    const prev = Number(row.previous_quantity || 0);
-                    const restock = Number(row.restocked_quantity || 0);
-                    const counted = Number(row.counted_quantity || 0);
-                    const consumed = prev + restock - counted;
-                    if (consumed === 0) return 'rh-inv-count-consume--zero';
-                    if (consumed < 0) return 'rh-inv-count-consume--neg';
-                    return '';
-                },
-                totalConsumptionLabel() {
-                    let positive = 0;
-                    let count = 0;
-                    for (const row of this.countDraft.ingredients) {
-                        const c = Number(row.previous_quantity || 0) + Number(row.restocked_quantity || 0) - Number(row.counted_quantity || 0);
-                        if (c > 0) {
-                            positive += c;
-                            count++;
-                        }
-                    }
-                    if (count === 0) return 'none';
-                    return count + ' item' + (count === 1 ? '' : 's');
-                },
-                async openCountDetail(countId) {
-                    this.countDetail = null;
-                    this.countDetailOpen = true;
-                    try {
-                        const url = this.countShowUrlTemplate.replace('__COUNT__', countId);
-                        const res = await fetch(url, {
-                            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-                        });
-                        if (!res.ok) throw new Error('Failed to load');
-                        this.countDetail = await res.json();
-                    } catch (err) {
-                        this.countDetailOpen = false;
-                        console.error(err);
-                    }
-                },
-                closeCountDetail() {
-                    this.countDetailOpen = false;
-                    this.countDetail = null;
-                },
-                async openIngredient(ingredientId) {
-                    if (this.ingredientController) this.ingredientController.abort();
-                    this.ingredientData = null;
-                    this.ingredientOpen = true;
-                    this.ingredientController = new AbortController();
-                    try {
-                        const url = this.ingredientShowUrlTemplate.replace('__INGREDIENT__', ingredientId);
-                        const res = await fetch(url, {
-                            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-                            signal: this.ingredientController.signal,
-                        });
-                        if (!res.ok) throw new Error('Failed to load');
-                        this.ingredientData = await res.json();
-                    } catch (err) {
-                        if (err.name !== 'AbortError') {
-                            this.ingredientOpen = false;
-                            console.error(err);
-                        }
-                    }
-                },
-                closeIngredient() {
-                    this.ingredientOpen = false;
-                    this.ingredientData = null;
-                    if (this.ingredientController) this.ingredientController.abort();
-                },
-                openCreate() {
-                    this.form = {
-                        mode: 'create',
-                        action: '',
-                        branch_id: '',
-                        name: '',
-                        sku: '',
-                        unit: 'pcs',
-                        current_stock: '0',
-                        reorder_level: '0',
-                        is_active: true,
-                    };
-                    this.formOpen = true;
-                    this.submitting = false;
-                },
-                openEdit(item) {
-                    this.form = {
-                        mode: 'edit',
-                        action: this.updateUrlTemplate.replace('__INGREDIENT__', item.id),
-                        branch_id: String(item.branch_id ?? ''),
-                        name: item.name ?? '',
-                        sku: item.sku ?? '',
-                        unit: item.unit ?? 'pcs',
-                        current_stock: String(item.current_stock ?? '0'),
-                        reorder_level: String(item.reorder_level ?? '0'),
-                        is_active: Boolean(item.is_active),
-                    };
-                    this.formOpen = true;
-                    this.ingredientOpen = false;
-                    this.submitting = false;
-                },
-                editFromDetail() {
-                    if (!this.ingredientData) return;
-                    this.openEdit(this.ingredientData.ingredient);
-                },
-                closeForm() {
-                    this.formOpen = false;
-                    this.submitting = false;
-                },
-                closeAll() {
-                    this.countOpen = false;
-                    this.countDetailOpen = false;
-                    this.ingredientOpen = false;
-                    this.formOpen = false;
-                },
-                formatStock(n) {
-                    if (n === null || n === undefined) return '0';
-                    const num = Number(n);
-                    let s = num.toFixed(3);
-                    return s.replace(/\.?0+$/, '');
-                },
-                stockBarPct(ing) {
-                    const max = Math.max((ing.reorder_level || 0) * 2, 1);
-                    return Math.max(2, Math.min(100, (ing.current_stock / max) * 100));
-                },
-            };
-        }
-    </script>
 </x-app-layout>
