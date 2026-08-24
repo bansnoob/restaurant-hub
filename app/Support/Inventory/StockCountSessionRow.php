@@ -9,6 +9,10 @@ namespace App\Support\Inventory;
  *
  * Invariant: expectedQuantity === previousQuantity + restockedQuantity, i.e.
  * the book stock the counter is being asked to verify.
+ *
+ * categoryName is null for an uncategorised ingredient, which sorts LAST in
+ * StockCountSession::$rows. The row is still present and still counted — the
+ * category is a header, never a filter.
  */
 final readonly class StockCountSessionRow
 {
@@ -24,5 +28,8 @@ final readonly class StockCountSessionRow
         public float $restockedQuantity,
         public float $expectedQuantity,
         public float $countedQuantity,
+        public ?int $ingredientCategoryId,
+        public ?string $categoryName,
+        public ?int $categorySortOrder,
     ) {}
 }

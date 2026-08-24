@@ -4,8 +4,23 @@
     </x-slot>
 
     @php
-        $hasActiveFilters = $filters['search'] !== '' || ! empty($filters['branch_id']) || $filters['unit'] !== '' || $filters['low_only'];
+        $hasActiveFilters = $filters['search'] !== '' || ! empty($filters['branch_id']) || $filters['unit'] !== '' || $filters['low_only'] || $filters['category_id'] !== '';
         $unitOptions = ['pcs', 'kg', 'g', 'l', 'ml'];
+        $uncategorizedLabel = \App\Http\Controllers\InventoryController::UNCATEGORIZED_LABEL;
+
+        // The manager and the form picker need the categories as DATA, not just
+        // as <option> markup: the picker is filtered by the form's branch, and
+        // the manager stages a reorder before posting it.
+        $categoryPayload = $categories->map(fn ($c) => [
+            'id' => (int) $c->id,
+            // null is a SHARED category, spanning every branch. The manager
+            // shows it read-only: the server refuses to edit one from a branch.
+            'branch_id' => $c->branch_id === null ? null : (int) $c->branch_id,
+            'name' => $c->name,
+            'sort_order' => (int) $c->sort_order,
+            'is_active' => (bool) $c->is_active,
+            'ingredient_count' => (int) ($c->ingredients_count ?? 0),
+        ])->values();
 
         // The count modal fetches ONE branch's session at a time, so it needs
         // the branch list as data (not just as <option> markup) to pick a sane
@@ -30,6 +45,15 @@
             countDestroyUrlTemplate: @js(route('inventory.counts.destroy', ['stockCount' => '__COUNT__'])),
             ingredientShowUrlTemplate: @js(route('inventory.show', ['ingredient' => '__INGREDIENT__'])),
             updateUrlTemplate: @js(route('inventory.update', ['ingredient' => '__INGREDIENT__'])),
+            storeCategoryUrl: @js(route('inventory.categories.store')),
+            reorderCategoryUrl: @js(route('inventory.categories.reorder')),
+            categoryUpdateUrlTemplate: @js(route('inventory.categories.update', ['ingredientCategory' => '__CATEGORY__'])),
+            categoryDestroyUrlTemplate: @js(route('inventory.categories.destroy', ['ingredientCategory' => '__CATEGORY__'])),
+            categories: @js($categoryPayload),
+            manageBranchId: @js($manageBranchId),
+            {{-- A category write redirects back; reopening the drawer lands the
+                 owner where they were instead of at the top of the page. --}}
+            categoriesOpen: @js((bool) session('categories_open')),
             csrfToken: @js(csrf_token()),
             allIngredients: @js($allIngredientsPayload),
             branches: @js($branchOptions),
@@ -62,6 +86,12 @@
                 </p>
             </div>
             <div class="rh-inv-topbar-actions">
+                <button type="button" class="rm-btn rm-btn--ghost" @click="openCategories()">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                    Count Order
+                </button>
                 <button type="button" class="rm-btn rm-btn--ghost" @click="openCreate()">
                     <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/>
@@ -134,6 +164,26 @@
                         <option value="{{ $branch->id }}" {{ (string) $filters['branch_id'] === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
                     @endforeach
                 </select>
+                <select name="category_id" class="rh-inv-select" @change="$refs.filterForm.requestSubmit()">
+                    <option value="">All sections</option>
+                    @if (empty($filters['branch_id']) && $branches->count() > 1)
+                        {{-- No branch filter: every branch's categories are listed,
+                             grouped by branch rather than de-duplicated — two
+                             branches' "Dry store" shelves are two different shelves. --}}
+                        @foreach ($categories->groupBy('branch_id') as $branchKey => $group)
+                            <optgroup label="{{ $branchKey === null || $branchKey === '' ? 'Shared' : ($branches->firstWhere('id', (int) $branchKey)?->name ?? 'Branch '.$branchKey) }}">
+                                @foreach ($group as $category)
+                                    <option value="{{ $category->id }}" {{ $filters['category_id'] === (string) $category->id ? 'selected' : '' }}>{{ $category->name }}</option>
+                                @endforeach
+                            </optgroup>
+                        @endforeach
+                    @else
+                        @foreach ($categories as $category)
+                            <option value="{{ $category->id }}" {{ $filters['category_id'] === (string) $category->id ? 'selected' : '' }}>{{ $category->name }}</option>
+                        @endforeach
+                    @endif
+                    <option value="none" {{ $filters['category_id'] === 'none' ? 'selected' : '' }}>{{ $uncategorizedLabel }}</option>
+                </select>
                 <div class="rh-inv-chips">
                     @foreach ($unitOptions as $unit)
                         @php $on = $filters['unit'] === $unit; @endphp
@@ -153,122 +203,7 @@
             </div>
         </form>
 
-        {{-- Ingredient list --}}
-        @if ($ingredients->isEmpty())
-            <div class="rh-inv-list">
-                <div class="rh-inv-empty">
-                    <svg class="rh-inv-empty-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                        <path d="M5 8h14l-1 12H6L5 8z"/>
-                        <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
-                    </svg>
-                    <p class="rh-inv-empty-title">No ingredients found</p>
-                    <p style="font-size: 0.82rem;">@if ($hasActiveFilters) Try clearing filters. @else Click <strong>Add Ingredient</strong> to start. @endif</p>
-                </div>
-            </div>
-        @else
-            <div class="rh-inv-list">
-                @foreach ($ingredients as $ingredient)
-                    @php
-                        $current = (float) $ingredient->current_stock;
-                        $reorder = (float) $ingredient->reorder_level;
-                        $isLow = $ingredient->isLowStock();
-                        $isZero = $current <= 0;
-                        $maxFor = max($reorder * 2, 1);
-                        $pct = max(2, min(100, ($current / $maxFor) * 100));
-                        $stockClass = $isZero ? 'rh-inv-stock-current--zero' : ($isLow ? 'rh-inv-stock-current--low' : '');
-                        $fillClass = $isZero ? 'rh-inv-stock-fill--zero' : ($isLow ? 'rh-inv-stock-fill--low' : '');
-                        $iconClass = 'rh-inv-icon--unit-'.$ingredient->unit;
-                        $initial = strtoupper(substr($ingredient->name, 0, 1));
-                        $payload = [
-                            'id' => $ingredient->id,
-                            'branch_id' => $ingredient->branch_id,
-                            'name' => $ingredient->name,
-                            'sku' => $ingredient->sku,
-                            'unit' => $ingredient->unit,
-                            'current_stock' => $current,
-                            'reorder_level' => $reorder,
-                            'is_active' => (bool) $ingredient->is_active,
-                            'branch_name' => $ingredient->branch?->name,
-                        ];
-                        $stockFmt = rtrim(rtrim(number_format($current, 3), '0'), '.');
-                        $reorderFmt = rtrim(rtrim(number_format($reorder, 3), '0'), '.');
-
-                        $daily = (float) ($ingredient->daily_consumption ?? 0);
-                        $daysLeft = $ingredient->days_remaining;
-                        if ($daysLeft === null) {
-                            $daysLeftLabel = '—';
-                            $daysLeftClass = 'rh-inv-rate-days--muted';
-                        } elseif ($daysLeft <= 3) {
-                            $daysLeftLabel = number_format($daysLeft, 1).'d';
-                            $daysLeftClass = 'rh-inv-rate-days--danger';
-                        } elseif ($daysLeft <= 7) {
-                            $daysLeftLabel = number_format($daysLeft, 1).'d';
-                            $daysLeftClass = 'rh-inv-rate-days--warn';
-                        } else {
-                            $daysLeftLabel = number_format($daysLeft, 0).'d';
-                            $daysLeftClass = '';
-                        }
-                        $dailyLabel = $daily > 0 ? rtrim(rtrim(number_format($daily, 2), '0'), '.').'/d' : 'No data';
-                    @endphp
-                    <div
-                        class="rh-inv-row"
-                        role="button"
-                        tabindex="0"
-                        @click="openIngredient({{ $ingredient->id }})"
-                        @keydown.enter="openIngredient({{ $ingredient->id }})"
-                        @keydown.space.prevent="openIngredient({{ $ingredient->id }})"
-                    >
-                        <span class="rh-inv-icon {{ $iconClass }}">{{ $initial }}</span>
-                        <div class="rh-inv-name-block">
-                            <div class="rh-inv-name">{{ $ingredient->name }}</div>
-                            <span class="rh-inv-name-meta">{{ $ingredient->sku ?: '—' }} · {{ $ingredient->unit }}</span>
-                        </div>
-                        <span class="rh-inv-branch">{{ $ingredient->branch?->name ?? '—' }}</span>
-                        <div class="rh-inv-stock">
-                            <div class="rh-inv-stock-line">
-                                <span class="rh-inv-stock-current {{ $stockClass }}">{{ $stockFmt }}<span style="font-size: 0.72em; color: var(--rh-text-muted); margin-left: 0.2rem;">{{ $ingredient->unit }}</span></span>
-                                <span>reorder {{ $reorderFmt }}</span>
-                            </div>
-                            <span class="rh-inv-stock-track">
-                                <span class="rh-inv-stock-fill {{ $fillClass }}" style="width: {{ $pct }}%;"></span>
-                            </span>
-                        </div>
-                        <span class="rh-inv-rate">
-                            <span class="rh-inv-rate-days {{ $daysLeftClass }}">{{ $daysLeftLabel }}</span>
-                            {{ $dailyLabel }}
-                        </span>
-                        <span class="rh-inv-status {{ $ingredient->is_active ? 'rh-inv-status--active' : 'rh-inv-status--inactive' }}">
-                            <span class="rh-inv-status-dot"></span>
-                            {{ $ingredient->is_active ? 'Active' : 'Inactive' }}
-                        </span>
-                        <span class="rh-inv-actions" @click.stop x-data="{ open: false }" @click.outside="open = false">
-                            <button type="button" class="rh-inv-kebab" @click.stop="open = !open" aria-label="Actions">
-                                <svg fill="currentColor" viewBox="0 0 24 24">
-                                    <circle cx="5" cy="12" r="1.6"/>
-                                    <circle cx="12" cy="12" r="1.6"/>
-                                    <circle cx="19" cy="12" r="1.6"/>
-                                </svg>
-                            </button>
-                            <div class="rh-inv-menu" x-show="open" x-cloak x-transition.opacity.duration.150ms>
-                                <button type="button" @click="open = false; openEdit(@js($payload))">
-                                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5m-9 1 8.5-8.5a1.41 1.41 0 0 1 2 2L13 15l-3 .5.5-3Z"/></svg>
-                                    Edit
-                                </button>
-                                <hr>
-                                <form method="POST" action="{{ route('inventory.destroy', $ingredient) }}" onsubmit="return confirm('Delete {{ addslashes($ingredient->name) }}?');">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="is-danger">
-                                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
-                                        Delete
-                                    </button>
-                                </form>
-                            </div>
-                        </span>
-                    </div>
-                @endforeach
-            </div>
-        @endif
+        @include('modules.inventory.partials.ingredient-list')
 
         {{-- Recent stock counts --}}
         <section class="rh-inv-counts">
@@ -340,135 +275,7 @@
             </div>
         </section>
 
-        {{-- Start Count drawer --}}
-        <template x-if="countOpen">
-            <div class="rm-overlay" @click.self="closeCount()">
-                <form method="POST" :action="storeCountUrl" class="rm-drawer rm-drawer--xl" @submit="onCountSubmit($event)">
-                    @csrf
-                    <div class="rm-drawer-head">
-                        <div>
-                            <h2 class="rm-drawer-title">New Stock Count</h2>
-                            <p class="rm-page-sub" x-show="countDraft.ingredients.length" x-text="countDraft.ingredients.length + ' items · enter the actual quantity for each'"></p>
-                        </div>
-                        <button type="button" class="rm-drawer-close" @click="closeCount()">×</button>
-                    </div>
-                    <div class="rm-drawer-body">
-                        <template x-if="countLoading">
-                            <div class="rh-inv-detail-loading">Loading…</div>
-                        </template>
-                        <template x-if="!countLoading">
-                            <div>
-                                <div x-show="countError" class="rh-inv-detail-loading" style="padding: 0.75rem 1rem; color: var(--rh-danger-solid);" x-text="countError"></div>
-
-                                <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
-                                    <div class="rm-field">
-                                        <label class="rm-field-label">Branch</label>
-                                        {{-- A count belongs to ONE branch, so switching branch REFETCHES
-                                             the session. x-model is deliberately not used: the change has
-                                             to be intercepted so a dirty draft can be confirmed first and
-                                             the picker put back when the owner declines. --}}
-                                        <select name="branch_id" class="rm-input" :value="countDraft.branch_id" @change="onCountBranchChange($event)" required>
-                                            <option value="">Select branch</option>
-                                            @foreach ($branches as $branch)
-                                                <option value="{{ $branch->id }}">{{ $branch->name }}</option>
-                                            @endforeach
-                                        </select>
-                                    </div>
-                                    <div class="rm-field">
-                                        <label class="rm-field-label">Count Date</label>
-                                        <input type="date" name="counted_at" class="rm-input" x-model="countDraft.counted_at" required>
-                                    </div>
-                                </div>
-
-                                <div class="rh-inv-count-summary">
-                                    <span><strong x-text="countDraft.ingredients.length"></strong> items</span>
-                                    <span>Total consumed <strong x-text="totalConsumptionLabel()"></strong></span>
-                                </div>
-
-                                <div style="overflow-x: auto;">
-                                    <table class="rh-inv-count-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Ingredient</th>
-                                                <th class="num">Previous</th>
-                                                <th class="num">Restocked</th>
-                                                <th class="num">Counted</th>
-                                                <th class="num">Consumed</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <template x-for="(row, idx) in countDraft.ingredients" :key="row.ingredient_id">
-                                                <tr>
-                                                    <td>
-                                                        <input type="hidden" :name="'entries[' + idx + '][ingredient_id]'" :value="row.ingredient_id">
-                                                        <span class="rh-inv-count-name" x-text="row.name"></span>
-                                                        <span class="rh-inv-count-name-meta" x-text="(row.sku || '—') + ' · ' + row.unit + ' · ' + (row.branch_name || '—')"></span>
-                                                    </td>
-                                                    <td class="num">
-                                                        <span x-text="formatStock(row.previous_quantity) + ' ' + row.unit"></span>
-                                                        {{-- Deliveries logged since the last count come from
-                                                             inventory_movements. They are folded into the count
-                                                             server-side, so they are shown read-only here and are
-                                                             already part of the Consumed column below. --}}
-                                                        <span
-                                                            class="rh-inv-count-name-meta"
-                                                            x-show="Number(row.pending_restock || 0) !== 0"
-                                                            x-text="(Number(row.pending_restock || 0) > 0 ? '+' : '-') + formatStock(Math.abs(Number(row.pending_restock || 0))) + ' logged'"
-                                                        ></span>
-                                                    </td>
-                                                    <td class="num">
-                                                        <input
-                                                            type="number"
-                                                            step="0.001"
-                                                            min="0"
-                                                            class="rh-inv-count-input"
-                                                            :name="'entries[' + idx + '][restocked_quantity]'"
-                                                            x-model.number="row.restocked_quantity"
-                                                            placeholder="0"
-                                                        >
-                                                    </td>
-                                                    <td class="num">
-                                                        <input
-                                                            type="number"
-                                                            step="0.001"
-                                                            min="0"
-                                                            class="rh-inv-count-input"
-                                                            :name="'entries[' + idx + '][counted_quantity]'"
-                                                            x-model.number="row.counted_quantity"
-                                                            required
-                                                        >
-                                                    </td>
-                                                    <td class="num">
-                                                        <span class="rh-inv-count-consume" :class="rowConsumeClass(row)" x-text="rowConsumeLabel(row)"></span>
-                                                    </td>
-                                                </tr>
-                                            </template>
-                                            <template x-if="countDraft.ingredients.length === 0">
-                                                <tr>
-                                                    <td colspan="5" style="text-align: center; padding: 2rem; color: var(--rh-text-muted);" x-text="countEmptyStateMessage()"></td>
-                                                </tr>
-                                            </template>
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                <div class="rm-field" style="margin-top: 1rem;">
-                                    <label class="rm-field-label">Notes <span class="rm-field-opt">(optional)</span></label>
-                                    <textarea name="notes" class="rm-input rm-textarea" x-model="countDraft.notes" rows="2" placeholder="Anything unusual about this count?"></textarea>
-                                </div>
-                            </div>
-                        </template>
-                    </div>
-                    <div class="rm-drawer-foot">
-                        <div></div>
-                        <div class="rm-drawer-foot-right">
-                            <button type="button" class="rm-btn rm-btn--ghost" @click="closeCount()">Cancel</button>
-                            <button type="submit" class="rm-btn rm-btn--primary" :disabled="submitting || countLoading || ! countDraft.branch_id || countDraft.ingredients.length === 0">Save count</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </template>
+        @include('modules.inventory.partials.count-drawer')
 
         {{-- Count Detail drawer --}}
         <template x-if="countDetailOpen">
@@ -510,7 +317,7 @@
                                                 <tr>
                                                     <td>
                                                         <span class="rh-inv-count-name" x-text="entry.name"></span>
-                                                        <span class="rh-inv-count-name-meta" x-text="(entry.sku || '—') + ' · ' + entry.unit"></span>
+                                                        <span class="rh-inv-count-name-meta" x-text="(entry.sku || '—') + ' · ' + entry.unit + ' · ' + (entry.category_name || @js($uncategorizedLabel))"></span>
                                                     </td>
                                                     <td class="num" x-text="formatStock(entry.previous_quantity) + ' ' + entry.unit"></td>
                                                     <td class="num" x-text="formatStock(entry.restocked_quantity) + ' ' + entry.unit"></td>
@@ -585,6 +392,10 @@
                                         <div>
                                             <span class="rh-inv-detail-cell-label">Status</span>
                                             <span class="rh-inv-detail-cell-value" x-text="ingredientData.ingredient.is_active ? 'Active' : 'Inactive'"></span>
+                                        </div>
+                                        <div>
+                                            <span class="rh-inv-detail-cell-label">Section</span>
+                                            <span class="rh-inv-detail-cell-value" x-text="ingredientData.ingredient.category_name || @js($uncategorizedLabel)"></span>
                                         </div>
                                     </div>
                                 </div>
@@ -676,6 +487,27 @@
                                 </select>
                             </div>
                         </div>
+                        {{-- Category is OPTIONAL: an ingredient with none is not
+                             hidden, it walks in the uncategorized tail. "— none —"
+                             posts '' and the controller normalises it to null, so
+                             a section can also be cleared. --}}
+                        <div class="rm-field">
+                            <label class="rm-field-label">Section <span class="rm-field-opt">(count order)</span></label>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <select name="ingredient_category_id" class="rm-input" style="flex: 1;" x-model="form.ingredient_category_id" x-show="! showNewCategory" :disabled="showNewCategory">
+                                    <option value="">— none —</option>
+                                    {{-- :selected as well as x-model: Alpine binds the model
+                                         before an x-for has rendered the options, so an edit
+                                         would otherwise open on "— none —" and clear the
+                                         section on save. --}}
+                                    <template x-for="cat in formCategories()" :key="cat.id">
+                                        <option :value="cat.id" :selected="String(cat.id) === String(form.ingredient_category_id)" x-text="cat.name + (cat.is_active ? '' : ' (inactive)')"></option>
+                                    </template>
+                                </select>
+                                <input type="text" name="new_category_name" class="rm-input" style="flex: 1;" x-show="showNewCategory" :disabled="! showNewCategory" x-model="form.new_category_name" maxlength="100" placeholder="New section name">
+                                <button type="button" class="rm-btn rm-btn--ghost" @click="toggleNewCategory()" x-text="showNewCategory ? 'Pick existing' : '＋ New'"></button>
+                            </div>
+                        </div>
                         <template x-if="form.mode === 'create'">
                             <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
                                 <div class="rm-field">
@@ -717,5 +549,7 @@
                 </form>
             </div>
         </template>
+
+        @include('modules.inventory.partials.category-drawer')
     </div>
 </x-app-layout>

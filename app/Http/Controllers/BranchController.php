@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\Employee;
+use App\Models\IngredientCategory;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -44,6 +45,13 @@ class BranchController extends Controller
             'address' => $validated['address'] ?? null,
             'is_active' => (bool) ($validated['is_active'] ?? true),
         ]);
+
+        // A new branch starts with the default inventory walk, so its first
+        // stock count follows the shelves instead of the alphabet. The seed
+        // migration only ever ran for the branches that existed when categories
+        // shipped; without this call every later branch would start with an
+        // empty category list and no way to get the defaults back.
+        IngredientCategory::seedDefaultsFor((int) $branch->id);
 
         if (! empty($validated['assign_to_me'])) {
             $user = $request->user();

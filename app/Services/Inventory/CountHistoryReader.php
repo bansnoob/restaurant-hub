@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Inventory;
 
+use App\Models\StockCountEntry;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Read-only derivations over stock_counts / stock_count_entries: the daily
@@ -103,6 +106,78 @@ final class CountHistoryReader
         }
 
         return $result;
+    }
+
+    /**
+     * The ingredient's most recent stock count entries, returned OLDEST-FIRST.
+     *
+     * Mirrors the legacy web query exactly: take the NEWEST $limit rows by id,
+     * then reverse them for display.
+     *
+     * @return Collection<int, StockCountEntry>
+     */
+    public function ingredientHistory(int $ingredientId, int $limit): Collection
+    {
+        return StockCountEntry::with('stockCount:id,counted_at,branch_id')
+            ->where('ingredient_id', $ingredientId)
+            ->whereHas('stockCount')
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get()
+            ->reverse()
+            ->values();
+    }
+
+    /**
+     * One count's entries in the same category walk order the count was taken
+     * in, so reading a saved count back reproduces the physical walk.
+     *
+     * consumptionRates() and previousQuantities() above are deliberately NOT
+     * reordered: their `orderBy('e.ingredient_id')` is a GROUPING requirement
+     * for the PHP loops that follow, not a display order, and walking them by
+     * category would silently break the "two most recent entries per
+     * ingredient" derivation.
+     *
+     * Sorted in PHP rather than SQL: a count is capped at
+     * InventoryService::MAX_COUNT_ENTRIES rows, and expressing "the
+     * ingredient's category's sort_order" in SQL from stock_count_entries
+     * needs a two-level correlated subquery that reads differently on MySQL
+     * and SQLite. The comparator below is one place, portable, and testable.
+     *
+     * @return Collection<int, StockCountEntry>
+     */
+    public function countEntries(int $stockCountId): Collection
+    {
+        return StockCountEntry::with([
+            'ingredient:id,name,sku,unit,ingredient_category_id',
+            'ingredient.category:id,name,sort_order',
+        ])
+            ->where('stock_count_id', $stockCountId)
+            ->get()
+            ->sortBy(fn (StockCountEntry $entry): array => $this->walkSortKey($entry))
+            ->values();
+    }
+
+    /**
+     * Array sort key, compared element-wise by PHP's <=>. Element 0 is the
+     * uncategorised flag, so an entry whose ingredient lost its category (or
+     * whose ingredient row is missing entirely) sorts LAST instead of throwing
+     * or disappearing.
+     *
+     * @return array{int, int, string, string, int}
+     */
+    private function walkSortKey(StockCountEntry $entry): array
+    {
+        $ingredient = $entry->ingredient;
+        $category = $ingredient?->category;
+
+        return [
+            $category === null ? 1 : 0,
+            (int) ($category->sort_order ?? 0),
+            Str::lower((string) ($category->name ?? '')),
+            Str::lower((string) ($ingredient->name ?? '')),
+            (int) ($ingredient->id ?? 0),
+        ];
     }
 
     private function dailyRate(object $previous, object $latest): float

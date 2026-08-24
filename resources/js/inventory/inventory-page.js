@@ -12,6 +12,131 @@
 /** Mirrors InventoryService::QUANTITY_SCALE (decimal(14,3)). */
 export const QUANTITY_ROUNDING_FACTOR = 1000;
 
+/**
+ * The ONE label for "no category", identical on the server (
+ * InventoryController::UNCATEGORIZED_LABEL) and on the phone
+ * (UNCATEGORIZED_LABEL in the mobile types), so the same shelf is never named
+ * two different things on two screens.
+ */
+export const UNCATEGORIZED_LABEL = 'Uncategorized';
+
+/** Group key for the uncategorized tail. A category id can never collide. */
+export const UNCATEGORIZED_GROUP_KEY = 'uncategorized';
+
+/** Steps of 10, matching IngredientCategory::SORT_ORDER_STEP. */
+export const SORT_ORDER_STEP = 10;
+
+/**
+ * A row belongs to the uncategorized tail when it has no category id OR no
+ * category name. Both are checked on purpose: a row carrying an id whose
+ * category could not be resolved must still land in the labelled tail rather
+ * than under a header with no title.
+ */
+function isUncategorizedRow(row) {
+    const id = row.ingredient_category_id ?? null;
+    const name = row.category_name ?? null;
+
+    return id === null || name === null || name === '';
+}
+
+/**
+ * Cut an ALREADY-ORDERED session row array into category groups.
+ *
+ * The server hands back InventoryService::buildCountSession()'s rows in the
+ * physical walk order (category sort_order, then ingredient name), so this
+ * NEVER sorts — it only cuts the run into sections, appending to an existing
+ * group if the same category reappears, and forcing the uncategorized group
+ * LAST exactly as Ingredient::scopeOrderedForWalk and the phone do.
+ *
+ * CRITICAL: the returned groups hold the ORIGINAL row objects, never spread
+ * copies. Alpine's x-model binds to those objects and rowConsumed() /
+ * totalConsumptionLabel() read countDraft.ingredients — copying would leave the
+ * totals reading a stale array while the inputs edited a detached one.
+ *
+ * Flat POST indexes come from group.startIndex instead: the template names
+ * inputs entries[group.startIndex + i][…], which stays unique across the whole
+ * draft. Restarting i per group would silently collapse the count.
+ *
+ * @returns {{key: string, title: string, startIndex: number, rows: object[]}[]}
+ */
+export function groupCountRows(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const byKey = new Map();
+    const ordered = [];
+
+    for (const row of list) {
+        const uncategorized = isUncategorizedRow(row);
+        const key = uncategorized ? UNCATEGORIZED_GROUP_KEY : String(row.ingredient_category_id);
+        let group = byKey.get(key);
+
+        if (!group) {
+            group = { key, title: uncategorized ? UNCATEGORIZED_LABEL : String(row.category_name), rows: [] };
+            byKey.set(key, group);
+            ordered.push(group);
+        }
+
+        group.rows.push(row);
+    }
+
+    const walk = [
+        ...ordered.filter((group) => group.key !== UNCATEGORIZED_GROUP_KEY),
+        ...ordered.filter((group) => group.key === UNCATEGORIZED_GROUP_KEY),
+    ];
+
+    let startIndex = 0;
+
+    // A NEW group object per section (immutability), still pointing at the very
+    // same rows array the draft holds.
+    return walk.map((group) => {
+        const withStart = { ...group, startIndex };
+        startIndex += group.rows.length;
+
+        return withStart;
+    });
+}
+
+/**
+ * Returns a NEW array whose sort_order is rewritten to (i + 1) * SORT_ORDER_STEP,
+ * regardless of the spacing it came in with. Never mutates its argument.
+ */
+export function resequence(categories) {
+    return categories.map((category, index) => ({
+        ...category,
+        sort_order: (index + 1) * SORT_ORDER_STEP,
+    }));
+}
+
+/**
+ * Returns a NEW array with `id` moved one place up or down and resequenced.
+ *
+ * Returns the SAME array reference when the move is impossible (already first,
+ * already last, id not present), which is how the caller detects a no-op and
+ * skips staging a pointless reorder.
+ */
+export function moveCategory(categories, id, direction) {
+    const index = categories.findIndex((category) => String(category.id) === String(id));
+    if (index === -1) return categories;
+
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= categories.length) return categories;
+
+    const next = [...categories];
+    next[index] = categories[target];
+    next[target] = categories[index];
+
+    return resequence(next);
+}
+
+/**
+ * Every other control in the Count Order drawer (Add, Rename, Active, Delete) is
+ * a full-page POST that redirects back and RE-STAGES the walk from the server,
+ * so a staged-but-unsaved reorder is silently thrown away by any of them. Same
+ * contract as COUNT_BRANCH_SWITCH_WARNING: typed-but-unsaved work is never
+ * discarded without asking.
+ */
+export const CATEGORY_ORDER_DISCARD_WARNING =
+    'Your unsaved count order will be discarded. Save the order first, or continue and lose it?';
+
 export const COUNT_BRANCH_SWITCH_WARNING =
     "Switching branch loads that branch's ingredients. The quantities you have already typed will be discarded. Continue?";
 export const COUNT_SESSION_ERROR_MESSAGE =
@@ -31,6 +156,10 @@ const emptyForm = () => ({
     current_stock: '0',
     reorder_level: '0',
     is_active: true,
+    // '' is the "— none —" option. The server normalises it back to null before
+    // validation, so an empty string never reaches the integer FK column.
+    ingredient_category_id: '',
+    new_category_name: '',
 });
 
 export function inventoryPage(config) {
@@ -41,10 +170,33 @@ export function inventoryPage(config) {
         countDestroyUrlTemplate: config.countDestroyUrlTemplate,
         ingredientShowUrlTemplate: config.ingredientShowUrlTemplate,
         updateUrlTemplate: config.updateUrlTemplate,
+        storeCategoryUrl: config.storeCategoryUrl,
+        reorderCategoryUrl: config.reorderCategoryUrl,
+        categoryUpdateUrlTemplate: config.categoryUpdateUrlTemplate,
+        categoryDestroyUrlTemplate: config.categoryDestroyUrlTemplate,
         csrfToken: config.csrfToken,
         allIngredients: config.allIngredients,
         branches: config.branches,
         filterBranchId: config.filterBranchId,
+        /**
+         * Every category the page may show, in walk order and INCLUDING the
+         * inactive ones: the manager needs them and the pickers filter them out
+         * client-side, so a filter never costs a round trip.
+         */
+        categories: config.categories || [],
+        /**
+         * The branch whose walk the manager edits. Categories are per branch, so
+         * managing them across "All branches" would be meaningless; the drawer
+         * asks for a branch instead.
+         */
+        manageBranchId: String(config.manageBranchId || ''),
+        // Reopened by the controller's flash after a category write, so the
+        // owner lands back where they were instead of at the top of the page.
+        categoriesOpen: Boolean(config.categoriesOpen),
+        categoryOrder: [],
+        categoryOrderDirty: false,
+        newCategoryName: '',
+        showNewCategory: false,
         // Server-rendered so the Count Date is filled in even when the modal
         // opens without a branch and therefore without a session fetch.
         today: config.today,
@@ -61,6 +213,11 @@ export function inventoryPage(config) {
         formOpen: false,
         submitting: false,
         form: emptyForm(),
+        init() {
+            // The drawer can boot open (a category write redirects back), and it
+            // renders the STAGED order, so the staging has to exist by then.
+            if (this.categoriesOpen) this.stageCategories();
+        },
         /**
          * Opening the modal never fetches bare: fetching without a branch would
          * render (and post) every branch's rows under whichever branch happened
@@ -210,6 +367,14 @@ export function inventoryPage(config) {
             if (consumed < 0) return 'rh-inv-count-consume--neg';
             return '';
         },
+        /**
+         * The count walk, cut into the sections the shelves are actually
+         * arranged in. Presentation only: the draft's row objects, their order
+         * and the flat entry indexes are untouched.
+         */
+        countGroups() {
+            return groupCountRows(this.countDraft.ingredients);
+        },
         totalConsumptionLabel() {
             let count = 0;
             for (const row of this.countDraft.ingredients) {
@@ -260,8 +425,126 @@ export function inventoryPage(config) {
             this.ingredientData = null;
             if (this.ingredientController) this.ingredientController.abort();
         },
+        /**
+         * A category is editable from this page only when it belongs to the
+         * branch being managed. A SHARED category (branch_id null) spans every
+         * branch and the server refuses to rename, reorder or delete it here, so
+         * the drawer must not offer controls that can only fail.
+         */
+        isEditableCategory(category) {
+            return (
+                this.manageBranchId !== '' &&
+                category.branch_id !== null &&
+                String(category.branch_id) === this.manageBranchId
+            );
+        },
+        editableCategories() {
+            return this.categories.filter((category) => this.isEditableCategory(category));
+        },
+        sharedCategories() {
+            return this.categories.filter((category) => category.branch_id === null);
+        },
+        /** Copies, so a staged reorder that is never saved changes nothing. */
+        stageCategories() {
+            this.categoryOrder = this.editableCategories().map((category) => ({ ...category }));
+            this.categoryOrderDirty = false;
+        },
+        openCategories() {
+            this.stageCategories();
+            this.newCategoryName = '';
+            this.categoriesOpen = true;
+        },
+        closeCategories() {
+            this.categoriesOpen = false;
+        },
+        /**
+         * Staged locally and committed by ONE post to the reorder endpoint: a
+         * connection dropped between N separate saves would leave the walk half
+         * renumbered.
+         */
+        moveCategoryRow(id, direction) {
+            const next = moveCategory(this.categoryOrder, id, direction);
+            // The same reference back means the move was impossible.
+            if (next === this.categoryOrder) return;
+            this.categoryOrder = next;
+            this.categoryOrderDirty = true;
+        },
+        /**
+         * Guard for the drawer's OTHER writes. Each one reloads the page and
+         * re-stages the walk, so a pending ▲▼ reorder would vanish with no
+         * message. Returns false when the operator refused, so a caller that
+         * has its own confirmation can stop there.
+         */
+        confirmDiscardStagedOrder(event) {
+            if (!this.categoryOrderDirty) return true;
+            if (window.confirm(CATEGORY_ORDER_DISCARD_WARNING)) return true;
+
+            event.preventDefault();
+
+            return false;
+        },
+        /**
+         * Deleting a category never deletes stock: the FK is nullOnDelete, so
+         * its ingredients simply reappear in the uncategorized tail. The
+         * confirmation says so, because "delete" next to an item count reads
+         * like it takes the items with it.
+         */
+        confirmCategoryDelete(event, category) {
+            // The order prompt first: a refused delete must not also discard a
+            // reorder, and answering two prompts for one click is the price of
+            // never losing either.
+            if (!this.confirmDiscardStagedOrder(event)) return;
+
+            const count = Number(category.ingredient_count || 0);
+            const message =
+                'Delete “' +
+                category.name +
+                '”?\n\n' +
+                count +
+                ' ingredient(s) will become ' +
+                UNCATEGORIZED_LABEL.toLowerCase() +
+                '. Nothing is deleted from stock.';
+
+            if (!window.confirm(message)) event.preventDefault();
+        },
+        categoryUpdateUrl(id) {
+            return this.categoryUpdateUrlTemplate.replace('__CATEGORY__', id);
+        },
+        categoryDestroyUrl(id) {
+            return this.categoryDestroyUrlTemplate.replace('__CATEGORY__', id);
+        },
+        /**
+         * The ingredient form's options: the categories that branch resolves,
+         * active only — PLUS the one the edited ingredient already carries even
+         * if it was deactivated, so editing an ingredient can never silently
+         * clear a category the owner cannot see.
+         */
+        formCategories() {
+            const branchId = String(this.form.branch_id || '');
+            const selected = String(this.form.ingredient_category_id || '');
+
+            return this.categories.filter((category) => {
+                const resolvable = category.branch_id === null || String(category.branch_id) === branchId;
+
+                return resolvable && (category.is_active || String(category.id) === selected);
+            });
+        },
+        /**
+         * The picker and the inline "new category" box are mutually exclusive in
+         * the UI. The server's documented precedence (a non-blank name WINS) is
+         * the safety net, not the interaction.
+         */
+        toggleNewCategory() {
+            this.showNewCategory = !this.showNewCategory;
+            if (this.showNewCategory) {
+                this.form = { ...this.form, ingredient_category_id: '' };
+            } else {
+                this.form = { ...this.form, new_category_name: '' };
+            }
+        },
         openCreate() {
             this.form = emptyForm();
+            this.showNewCategory = false;
             this.formOpen = true;
             this.submitting = false;
         },
@@ -276,7 +559,12 @@ export function inventoryPage(config) {
                 current_stock: String(item.current_stock ?? '0'),
                 reorder_level: String(item.reorder_level ?? '0'),
                 is_active: Boolean(item.is_active),
+                // Seeded from the row/detail payload; both carry it, so opening
+                // Edit can never post a blank that clears the assignment.
+                ingredient_category_id: String(item.ingredient_category_id ?? ''),
+                new_category_name: '',
             };
+            this.showNewCategory = false;
             this.formOpen = true;
             this.ingredientOpen = false;
             this.submitting = false;
@@ -294,6 +582,7 @@ export function inventoryPage(config) {
             this.countDetailOpen = false;
             this.ingredientOpen = false;
             this.formOpen = false;
+            this.categoriesOpen = false;
         },
         formatStock(n) {
             if (n === null || n === undefined) return '0';

@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DayClosureController;
 use App\Http\Controllers\Api\V1\EmployeeController;
 use App\Http\Controllers\Api\V1\ExpenseController;
+use App\Http\Controllers\Api\V1\IngredientCategoryController;
 use App\Http\Controllers\Api\V1\IngredientController;
 use App\Http\Controllers\Api\V1\MenuController;
 use App\Http\Controllers\Api\V1\OrderController;
@@ -53,6 +54,14 @@ Route::prefix('v1')->group(function () {
             ->prefix('inventory')
             ->group(function () {
                 Route::get('/summary', [IngredientController::class, 'summary']);
+
+                // /categories/reorder MUST stay above /categories/{ingredientCategory} —
+                // the same shadowing hazard as /counts/start.
+                Route::get('/categories', [IngredientCategoryController::class, 'index']);
+                Route::post('/categories', [IngredientCategoryController::class, 'store']);
+                Route::post('/categories/reorder', [IngredientCategoryController::class, 'reorder']);
+                Route::put('/categories/{ingredientCategory}', [IngredientCategoryController::class, 'update']);
+                Route::delete('/categories/{ingredientCategory}', [IngredientCategoryController::class, 'destroy']);
 
                 Route::get('/ingredients', [IngredientController::class, 'index']);
                 Route::post('/ingredients', [IngredientController::class, 'store']);

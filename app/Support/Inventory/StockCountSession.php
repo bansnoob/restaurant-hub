@@ -7,10 +7,14 @@ namespace App\Support\Inventory;
 /**
  * An open stock count session: the walk list plus the restock claim fence.
  *
- * $branchId / $branchName are nullable because the WEB flow opens a session
- * across every branch (the blade fetches /inventory/counts/start with no
- * branch_id and lets the owner pick the branch afterwards). The mobile API
- * always resolves a concrete branch.
+ * $rows IS the walk order: grouped by category sort_order, then by ingredient
+ * name, with the uncategorised tail last. Every consumer — the API resource,
+ * the web count modal, the phone — must group consecutive runs and NEVER
+ * re-sort, or two surfaces will walk the same branch's shelves differently.
+ *
+ * $branchId / $branchName are nullable for historical reasons only. Both HTTP
+ * surfaces now require a branch (the web startCount() made branch_id
+ * mandatory), so nothing should be designed around a branchless session.
  */
 final readonly class StockCountSession
 {
