@@ -7,6 +7,7 @@ use App\Http\Controllers\DayClosureController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\GcashReportController;
+use App\Http\Controllers\InventoryCategoryController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\PayrollController;
@@ -241,6 +242,23 @@ Route::middleware('auth')->group(function () {
     Route::delete('/inventory/{ingredient}', [InventoryController::class, 'destroy'])
         ->middleware('role:owner')
         ->name('inventory.destroy');
+
+    // Inventory categories — the physical walk order a stock count follows.
+    // /categories/reorder MUST stay ABOVE /categories/{ingredientCategory}, or
+    // the literal is swallowed by the model-bound route (the same hazard as
+    // /inventory/counts/start).
+    Route::post('/inventory/categories', [InventoryCategoryController::class, 'store'])
+        ->middleware('role:owner')
+        ->name('inventory.categories.store');
+    Route::post('/inventory/categories/reorder', [InventoryCategoryController::class, 'reorder'])
+        ->middleware('role:owner')
+        ->name('inventory.categories.reorder');
+    Route::put('/inventory/categories/{ingredientCategory}', [InventoryCategoryController::class, 'update'])
+        ->middleware('role:owner')
+        ->name('inventory.categories.update');
+    Route::delete('/inventory/categories/{ingredientCategory}', [InventoryCategoryController::class, 'destroy'])
+        ->middleware('role:owner')
+        ->name('inventory.categories.destroy');
 });
 
 require __DIR__.'/auth.php';

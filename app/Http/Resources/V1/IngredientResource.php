@@ -31,6 +31,18 @@ class IngredientResource extends JsonResource
             'branch_id' => (int) $ingredient->branch_id,
             'name' => $ingredient->name,
             'sku' => $ingredient->sku,
+            // Both keys are ALWAYS present, nullable and never omitted: the
+            // mobile cache row mapping has to stay total, and a missing key
+            // there is indistinguishable from "uncategorised".
+            'ingredient_category_id' => $ingredient->ingredient_category_id === null
+                ? null
+                : (int) $ingredient->ingredient_category_id,
+            'category' => $ingredient->category === null ? null : [
+                'id' => (int) $ingredient->category->id,
+                'name' => $ingredient->category->name,
+                'slug' => $ingredient->category->slug,
+                'sort_order' => (int) $ingredient->category->sort_order,
+            ],
             'unit' => $ingredient->unit,
             'current_stock' => round((float) $ingredient->current_stock, InventoryService::QUANTITY_SCALE),
             'reorder_level' => round((float) $ingredient->reorder_level, InventoryService::QUANTITY_SCALE),

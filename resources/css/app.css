@@ -6814,8 +6814,38 @@ select.rm-input {
 .rh-inv-list {
     border: 1px solid var(--rh-border);
     border-radius: 12px;
-    overflow: hidden;
+    /* `clip`, not `hidden`: both round off the corners, but `hidden` makes this
+       element a scroll container, which would trap the sticky group headers
+       inside a box that never scrolls. `clip` leaves them sticking to the
+       viewport, so the shelf name stays on screen while you scroll its items. */
+    overflow: clip;
     background: var(--rh-surface);
+}
+
+/* Category section header. Mirrors the phone's IngredientSectionHeader: the
+   shelf you are looking at stays named while you scroll past its items. */
+.rh-inv-group-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 1.15rem;
+    /* MUST be opaque — a translucent sticky header smears the rows under it. */
+    background: var(--rh-surface-2);
+    border-bottom: 1px solid var(--rh-border);
+    font-family: var(--rh-font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--rh-text-muted);
+}
+
+.rh-inv-group-low {
+    color: var(--rh-amber-text);
+    margin-left: 0.35rem;
 }
 
 .rh-inv-row {

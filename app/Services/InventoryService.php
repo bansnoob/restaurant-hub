@@ -6,11 +6,14 @@ namespace App\Services;
 
 use App\Models\Branch;
 use App\Models\Ingredient;
+use App\Models\IngredientCategory;
 use App\Models\InventoryMovement;
 use App\Models\StockCount;
 use App\Models\StockCountEntry;
 use App\Models\User;
+use App\Services\Inventory\CategoryReader;
 use App\Services\Inventory\CountHistoryReader;
+use App\Services\Inventory\InventorySnapshotReader;
 use App\Services\Inventory\MovementLedger;
 use App\Support\Inventory\IngredientStats;
 use App\Support\Inventory\IngredientView;
@@ -74,6 +77,8 @@ final class InventoryService
     public function __construct(
         private readonly MovementLedger $ledger = new MovementLedger,
         private readonly CountHistoryReader $history = new CountHistoryReader,
+        private readonly CategoryReader $categories = new CategoryReader,
+        private readonly InventorySnapshotReader $snapshot = new InventorySnapshotReader,
     ) {}
 
     // =====================================================================
@@ -81,15 +86,15 @@ final class InventoryService
     // =====================================================================
 
     /**
-     * @param  array{search?: string, unit?: string, low_only?: bool, include_inactive?: bool}  $filters
-     *                                                                                                    `include_inactive` is TRI-STATE on purpose: an absent key means
-     *                                                                                                    "do not filter on is_active at all" (the web index lists active and
-     *                                                                                                    inactive together). The API always passes the key explicitly.
+     * @param  array{search?: string, unit?: string, category_id?: int|'none', low_only?: bool, include_inactive?: bool}  $filters
+     *                                                                                                                              `include_inactive` is TRI-STATE on purpose: an absent key means
+     *                                                                                                                              "do not filter on is_active at all" (the web index lists active and
+     *                                                                                                                              inactive together). The API always passes the key explicitly.
      * @return Collection<int, IngredientView>
      */
     public function listIngredients(?int $branchId, array $filters = []): Collection
     {
-        $query = Ingredient::with('branch');
+        $query = Ingredient::with(['branch', 'category']);
 
         if ($branchId !== null) {
             $query->where('branch_id', $branchId);
@@ -98,6 +103,16 @@ final class InventoryService
         $unit = (string) ($filters['unit'] ?? '');
         if (in_array($unit, self::UNITS, true)) {
             $query->where('unit', $unit);
+        }
+
+        // Tri-state, like include_inactive: an ABSENT key means "do not filter
+        // on category at all", 'none' means the uncategorised tail only, and an
+        // int means that one category.
+        $categoryId = $filters['category_id'] ?? null;
+        if ($categoryId === 'none') {
+            $query->whereNull('ingredient_category_id');
+        } elseif (is_int($categoryId)) {
+            $query->where('ingredient_category_id', $categoryId);
         }
 
         $search = trim((string) ($filters['search'] ?? ''));
@@ -112,7 +127,8 @@ final class InventoryService
             $query->where('is_active', true);
         }
 
-        $ingredients = $query->orderBy('name')->get();
+        // low_only below is a Collection filter, so it PRESERVES this order.
+        $ingredients = $query->orderedForWalk()->get();
 
         if (! empty($filters['low_only'])) {
             $ingredients = $ingredients->filter(fn (Ingredient $i): bool => $i->isLowStock())->values();
@@ -127,23 +143,13 @@ final class InventoryService
     }
 
     /**
-     * The ingredient's most recent stock count entries, returned OLDEST-FIRST.
-     *
-     * Mirrors the legacy web query exactly: take the NEWEST $limit rows by id,
-     * then reverse them for display.
+     * The ingredient's most recent stock count entries, OLDEST-FIRST.
      *
      * @return Collection<int, StockCountEntry>
      */
     public function ingredientHistory(Ingredient $ingredient, int $limit = self::INGREDIENT_HISTORY_LIMIT): Collection
     {
-        return StockCountEntry::with('stockCount:id,counted_at,branch_id')
-            ->where('ingredient_id', $ingredient->id)
-            ->whereHas('stockCount')
-            ->orderByDesc('id')
-            ->limit($limit)
-            ->get()
-            ->reverse()
-            ->values();
+        return $this->history->ingredientHistory((int) $ingredient->id, $limit);
     }
 
     /**
@@ -202,63 +208,48 @@ final class InventoryService
     /** @return Collection<int, StockCount> */
     public function recentCounts(?int $branchId, int $limit = self::RECENT_COUNTS_LIMIT): Collection
     {
-        return StockCount::with(['branch:id,name', 'recordedBy:id,name'])
-            ->withCount('entries')
-            ->withSum('entries', 'consumption')
-            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
-            ->orderByDesc('counted_at')
-            ->orderByDesc('id')
-            ->limit($limit)
-            ->get();
+        return $this->snapshot->recentCounts($branchId, $limit);
     }
 
     public function summary(?int $branchId): InventorySummary
     {
-        $scope = fn ($q) => $branchId === null ? $q : $q->where('branch_id', $branchId);
-
-        $totalItems = $scope(Ingredient::query())->count();
-        $activeItems = $scope(Ingredient::query())->where('is_active', true)->count();
-        // Active-only, matching Ingredient::isLowStock() applied to the list the
-        // banner links to. A deactivated ingredient keeps its reorder_level, so
-        // without this filter the tile counts rows the list will never show.
-        $lowStockCount = $scope(Ingredient::query())
-            ->where('is_active', true)
-            ->where('reorder_level', '>', 0)
-            ->whereColumn('current_stock', '<=', 'reorder_level')
-            ->count();
-
-        $latestCount = $scope(StockCount::query())
-            ->orderByDesc('counted_at')
-            ->orderByDesc('id')
-            ->first();
-
-        $countsThisMonth = $scope(StockCount::query())
-            ->whereDate('counted_at', '>=', now()->startOfMonth()->toDateString())
-            ->count();
-
-        return new InventorySummary(
-            branchId: $branchId,
-            branchName: $branchId === null ? null : Branch::find($branchId)?->name,
-            totalItems: $totalItems,
-            activeItems: $activeItems,
-            lowStockCount: $lowStockCount,
-            lastCountAt: $latestCount?->counted_at?->toDateString(),
-            daysSinceLastCount: $latestCount
-                ? (int) Carbon::parse($latestCount->counted_at)->diffInDays(now())
-                : null,
-            countsThisMonth: $countsThisMonth,
-        );
+        return $this->snapshot->summary($branchId);
     }
 
     /** True when the given count is its BRANCH's most recent (guards deleteCount). */
     public function isLatestCount(StockCount $stockCount): bool
     {
-        $latest = StockCount::where('branch_id', $stockCount->branch_id)
-            ->orderByDesc('counted_at')
-            ->orderByDesc('id')
-            ->first();
+        return $this->snapshot->isLatestCount($stockCount);
+    }
 
-        return $latest !== null && $latest->id === $stockCount->id;
+    /**
+     * The branch's own categories plus the shared ones, in walk order.
+     *
+     * @return Collection<int, IngredientCategory>
+     */
+    public function listCategories(?int $branchId, bool $includeInactive = false): Collection
+    {
+        return $this->categories->listCategories($branchId, $includeInactive);
+    }
+
+    /**
+     * The branch's OWN category ids (shared ones excluded).
+     *
+     * @return list<int>
+     */
+    public function ownCategoryIds(int $branchId): array
+    {
+        return $this->categories->ownCategoryIds($branchId);
+    }
+
+    /**
+     * One saved count's entries, in the walk order it was taken in.
+     *
+     * @return Collection<int, StockCountEntry>
+     */
+    public function countEntries(StockCount $stockCount): Collection
+    {
+        return $this->history->countEntries((int) $stockCount->id);
     }
 
     // =====================================================================
@@ -279,10 +270,13 @@ final class InventoryService
     public function buildCountSession(?int $branchId): StockCountSession
     {
         return DB::transaction(function () use ($branchId): StockCountSession {
-            $ingredients = Ingredient::with('branch:id,name')
+            // orderedForWalk, not orderBy('name'): `rows` IS the walk order —
+            // category sort_order, then name, uncategorised last — so the count
+            // matches the shelves. Consumers group runs and must never re-sort.
+            $ingredients = Ingredient::with(['branch:id,name', 'category'])
                 ->where('is_active', true)
                 ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
-                ->orderBy('name')
+                ->orderedForWalk()
                 ->get();
 
             abort_if(
@@ -619,6 +613,9 @@ final class InventoryService
             restockedQuantity: $restocked,
             expectedQuantity: $expected,
             countedQuantity: $expected,
+            ingredientCategoryId: $i->ingredient_category_id === null ? null : (int) $i->ingredient_category_id,
+            categoryName: $i->category?->name,
+            categorySortOrder: $i->category?->sort_order === null ? null : (int) $i->category->sort_order,
         );
     }
 
