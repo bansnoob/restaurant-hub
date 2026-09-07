@@ -13,6 +13,7 @@ use App\Models\ExpenseCategory;
 use App\Models\Ingredient;
 use App\Models\PayrollEntry;
 use App\Models\Sale;
+use App\Models\SpecialExpense;
 
 class DashboardController extends Controller
 {
@@ -72,6 +73,40 @@ class DashboardController extends Controller
             ->whereDate('expense_date', '<=', $today)
             ->where('status', 'approved')
             ->sum('amount');
+
+        // ── Monthly overhead (rent, electricity) ──────────────────────────
+        // Read from `special_expenses`, NOT `expenses`. Overhead is deliberately
+        // absent from every "today" figure above — a month's rent landing on the
+        // 1st would otherwise read as a catastrophic single-day loss and would
+        // throw that day's drawer variance by the full amount. It belongs only
+        // to the month, which is what the panel below reports.
+        $mtdOverheadQuery = SpecialExpense::query()->forMonth($monthStart);
+        $mtdOverhead = (float) (clone $mtdOverheadQuery)->sum('amount');
+
+        // Net after overhead is the only figure on this page that is true profit:
+        // MTD revenue less both daily operating expenses and monthly overhead.
+        $mtdNetAfterOverhead = $mtdSales - $mtdExpenses - $mtdOverhead;
+
+        $overheadBreakdown = SpecialExpense::query()
+            ->forMonth($monthStart)
+            ->leftJoin(
+                'special_expense_categories',
+                'special_expenses.special_expense_category_id',
+                '=',
+                'special_expense_categories.id'
+            )
+            ->selectRaw("COALESCE(special_expense_categories.name, 'Uncategorized') as cat_name, SUM(special_expenses.amount) as total")
+            ->groupBy('cat_name')
+            ->orderByDesc('total')
+            // No limit: these rows sit directly under the Overhead tile and must
+            // sum to it. A month has a handful of overhead categories, not many,
+            // and a silent top-N would read as the tile being wrong.
+            ->get()
+            ->map(fn ($row) => [
+                'name' => (string) $row->cat_name,
+                'total' => (float) $row->total,
+            ])
+            ->all();
 
         $draftPayrolls = PayrollEntry::where('status', 'draft')->count();
 
@@ -144,6 +179,9 @@ class DashboardController extends Controller
             'totalClockedToday',
             'mtdSales',
             'mtdExpenses',
+            'mtdOverhead',
+            'mtdNetAfterOverhead',
+            'overheadBreakdown',
             'draftPayrolls',
             'last7Days',
             'chartMax',

@@ -997,8 +997,12 @@ html.light-mode {
 }
 
 @media (min-width: 700px) {
-    .rh-stat-grid--4 { grid-template-columns: repeat(4, 1fr); }
-    .rh-stat-grid--3 { grid-template-columns: repeat(3, 1fr); }
+    /* minmax(0, 1fr), not 1fr: a `1fr` track has an `auto` minimum, so a long
+       serif currency value (₱124,500) forces its column wider than its share.
+       The grid then overflows its panel and, inside .rh-dash-cols--6-4, drags
+       width away from the panel beside it. */
+    .rh-stat-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .rh-stat-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 .rh-stat-card {
@@ -1058,6 +1062,9 @@ html.light-mode {
 .rh-dash-panel {
     padding: 1.75rem 1.6rem;
     background: var(--rh-surface);
+    /* Grid items default to min-width:auto, which lets a wide child override the
+       3fr/2fr split. Without this the tracks above cannot actually shrink. */
+    min-width: 0;
 }
 
 /* Separator between panels (replaces the 1px gap line) */
@@ -8510,3 +8517,134 @@ select.rm-input {
 /* Stat sub icons in cards */
 .rh-stat-card-value--success { color: var(--rh-success-text); }
 .rh-stat-card-value--danger { color: var(--rh-error-text); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Special expenses — Daily / Special tab strip, the explanatory note, and
+   the dashboard's monthly overhead rows.
+
+   Colours resolve through --rh-* tokens only. Dark is this app's default and
+   html.light-mode is the opt-in override, so a literal hex here would break
+   in one mode or the other.
+   ══════════════════════════════════════════════════════════════════════ */
+
+.rh-exp-tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 0.35rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid var(--rh-border);
+}
+
+.rh-exp-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 1.1rem 0.7rem;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-family: var(--rh-font-sans);
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--rh-text-muted);
+    text-decoration: none;
+    transition: color 0.18s ease, border-color 0.18s ease;
+}
+
+.rh-exp-tab:hover {
+    color: var(--rh-text);
+}
+
+.rh-exp-tab--on {
+    color: var(--rh-text);
+    border-bottom-color: var(--rh-accent);
+}
+
+.rh-exp-tab-hint {
+    font-family: var(--rh-font-mono);
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--rh-text-dim);
+}
+
+.rh-exp-note {
+    margin: 0 0 1.5rem;
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--rh-border-2);
+    border-left: 2px solid var(--rh-accent);
+    border-radius: 8px;
+    background: var(--rh-surface);
+    font-family: var(--rh-font-sans);
+    font-size: 0.8rem;
+    line-height: 1.55;
+    color: var(--rh-text-muted);
+}
+
+.rh-exp-note strong {
+    color: var(--rh-text);
+    font-weight: 600;
+}
+
+/* Dashboard: per-category overhead lines under the month-to-date figures. */
+.rh-dash-oh-rows {
+    margin-top: 0.9rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--rh-border);
+}
+
+.rh-dash-oh-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.28rem 0;
+}
+
+.rh-dash-oh-name {
+    font-family: var(--rh-font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--rh-text-dim);
+}
+
+.rh-dash-oh-amount {
+    font-family: var(--rh-font-serif);
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-variant-numeric: lining-nums tabular-nums;
+    color: var(--rh-text);
+}
+
+.rh-dash-oh-empty {
+    margin: 0.9rem 0 0;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--rh-border);
+    font-family: var(--rh-font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--rh-text-dim);
+}
+
+.rh-dash-oh-empty a {
+    color: var(--rh-accent);
+    text-decoration: none;
+}
+
+.rh-dash-oh-empty a:hover { text-decoration: underline; }
+
+/* Stat figures inside a dashboard panel sit in a narrower column than the
+   full-width strips the base size was tuned for — four of them share the 3fr
+   half of .rh-dash-cols--6-4. Scale the value down there so "Net after OH"
+   (the point of the overhead row) still fits on a laptop or an iPad. */
+.rh-dash-panel .rh-stat-card-value {
+    font-size: clamp(1rem, 1.55vw, 1.4rem);
+}
+
+.rh-dash-panel .rh-stat-card-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

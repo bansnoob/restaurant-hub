@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\IngredientCategory;
+use App\Models\SpecialExpense;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -94,6 +95,18 @@ class BranchController extends Controller
             return redirect()->route('branches.index')->with(
                 'error',
                 "Cannot delete \"{$branch->name}\": linked to {$employeeCount} employee(s) and {$userCount} user(s)."
+            );
+        }
+
+        // special_expenses.branch_id is restrictOnDelete, so this would otherwise
+        // surface as a raw FK exception. Overhead history is per-location and has
+        // no meaningful home once the branch is gone.
+        $overheadCount = SpecialExpense::where('branch_id', $branch->id)->count();
+
+        if ($overheadCount > 0) {
+            return redirect()->route('branches.index')->with(
+                'error',
+                "Cannot delete \"{$branch->name}\": it still has {$overheadCount} special expense(s) recorded against it."
             );
         }
 

@@ -38,7 +38,25 @@ class IngredientCategoryMigrationTest extends TestCase
 
         $this->assertSame(2, DB::table('ingredients')->whereNotNull('ingredient_category_id')->count());
 
-        Artisan::call('migrate:rollback', ['--step' => 2, '--force' => true]);
+        // Roll back every migration from the ingredient-category schema onward,
+        // counted rather than hardcoded. Under RefreshDatabase all migrations
+        // share one batch, so `--step 2` means "the last two migrations in the
+        // whole app" — it silently retargeted itself onto the next feature's
+        // migrations the moment one was added, and this test then asserted the
+        // rollback behaviour of an unrelated table.
+        $steps = DB::table('migrations')
+            ->where('migration', '>=', self::SCHEMA_MIGRATION)
+            ->count();
+
+        $this->assertGreaterThanOrEqual(2, $steps, 'both ingredient-category migrations must be in the rollback window');
+
+        Artisan::call('migrate:rollback', ['--step' => $steps, '--force' => true]);
+
+        $this->assertSame(
+            0,
+            DB::table('migrations')->whereIn('migration', [self::SCHEMA_MIGRATION, self::SEED_MIGRATION])->count(),
+            'both migrations must actually have been rolled back'
+        );
 
         $this->assertFalse(Schema::hasTable('ingredient_categories'));
         $this->assertFalse(Schema::hasColumn('ingredients', 'ingredient_category_id'));
