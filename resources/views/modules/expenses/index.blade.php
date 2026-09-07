@@ -65,6 +65,21 @@
             </button>
         </div>
 
+        {{-- Daily / Special tabs. Two tables sit behind these, not two views of one:
+             daily expenses feed the drawer count and today's net income, special
+             expenses feed neither. Keeping them one click apart is a UI choice; the
+             separation that matters is in the schema. --}}
+        <nav class="rh-exp-tabs" aria-label="Expense type">
+            <a href="{{ route('expenses.index') }}" class="rh-exp-tab rh-exp-tab--on" aria-current="page">
+                Daily
+                <span class="rh-exp-tab-hint">Operations</span>
+            </a>
+            <a href="{{ route('special-expenses.index') }}" class="rh-exp-tab">
+                Special
+                <span class="rh-exp-tab-hint">Rent · Utilities</span>
+            </a>
+        </nav>
+
         {{-- Date presets --}}
         <form method="GET" action="{{ route('expenses.index') }}" class="rh-exp-presets">
             @foreach ($presets as $key => $label)

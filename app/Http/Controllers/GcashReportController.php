@@ -12,6 +12,7 @@ use App\Models\GcashAdjustment;
 use App\Models\GcashEntryStatus;
 use App\Models\GcashWallet;
 use App\Models\Sale;
+use App\Models\SpecialExpense;
 use App\Services\SaleService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -237,7 +238,8 @@ class GcashReportController extends Controller
             $since = $wallet?->opening_date?->toDateString();
 
             $branchInflow = Sale::gcashAmountSum($this->walletSalesQuery($branch->id, $since));
-            $branchOutflow = (float) $this->walletExpensesQuery($branch->id, $since)->sum('amount');
+            $branchOutflow = (float) $this->walletExpensesQuery($branch->id, $since)->sum('amount')
+                + (float) $this->walletSpecialExpensesQuery($branch->id, $since)->sum('amount');
             $branchAdjustments = (float) $this->walletAdjustmentsQuery($branch->id, $since)->sum('amount');
 
             $branchBalance = $opening + $branchInflow - $branchOutflow + $branchAdjustments;
@@ -260,6 +262,12 @@ class GcashReportController extends Controller
             }
         }
 
+        // Applied once, outside the loop: this money belongs to no branch, so adding it
+        // per-branch would subtract it as many times as there are branches.
+        $companyWideOverhead = $this->companyWideGcashOverhead($branchId);
+        $outflow += $companyWideOverhead;
+        $balance -= $companyWideOverhead;
+
         $single = $branchId !== null ? $wallets->get($branchId) : null;
 
         return [
@@ -271,6 +279,7 @@ class GcashReportController extends Controller
             'inflow' => round($inflow, 2),
             'outflow' => round($outflow, 2),
             'adjustments' => round($adjustments, 2),
+            'company_wide_overhead' => round($companyWideOverhead, 2),
             'configured' => $branchId !== null ? $single !== null : $wallets->count() === $branches->count(),
             'scope_count' => $branches->count(),
             'unconfigured_count' => $branches->count() - $wallets->count(),
@@ -466,6 +475,64 @@ class GcashReportController extends Controller
         }
 
         return $query;
+    }
+
+    /**
+     * GCash-paid monthly overhead, for the WALLET only.
+     *
+     * Special expenses are deliberately invisible to every daily figure — the drawer
+     * count, today's net income, today's cash on hand. The wallet is none of those:
+     * it is a real-money position, so a rent or electricity bill settled from the
+     * GCash account genuinely left it and the balance must fall or it will never
+     * reconcile against the GCash app.
+     *
+     * `net_gcash` deliberately does NOT get this leg. That figure is trading
+     * performance — what GCash selling earned against what selling it cost — and a
+     * month's rent would drag it negative in a perfectly healthy month.
+     *
+     * Dated by `paid_date` where known, falling back to `period_month`: a balance is
+     * a settlement-date position, not an accrual one. Rows with no branch are
+     * company-wide and belong to no single branch's wallet, so they are excluded
+     * here and surfaced separately by companyWideGcashOverhead().
+     *
+     * @return Builder<SpecialExpense>
+     */
+    private function walletSpecialExpensesQuery(int $branchId, ?string $since): Builder
+    {
+        $query = SpecialExpense::query()
+            ->where('payment_method', 'gcash')
+            ->where('branch_id', $branchId);
+
+        if ($since !== null) {
+            // whereRaw, not whereDate: the comparison is on COALESCE of two columns,
+            // and a plain string compare is correct on both drivers here — MySQL
+            // compares DATEs, and SQLite's 'Y-m-d H:i:s' strings share the date
+            // prefix, so they order correctly against a 'Y-m-d' bound.
+            $query->whereRaw('COALESCE(paid_date, period_month) >= ?', [$since]);
+        }
+
+        return $query;
+    }
+
+    /**
+     * GCash overhead that covers the whole business rather than one location.
+     *
+     * It cannot be charged to any single branch's wallet without distorting that
+     * branch, so it is reported as its own line and subtracted from the all-branches
+     * total only.
+     */
+    private function companyWideGcashOverhead(?int $branchId): float
+    {
+        // A single-branch view is a statement about that branch's wallet, and this
+        // money belongs to no branch, so it has no place there.
+        if ($branchId !== null) {
+            return 0.0;
+        }
+
+        return (float) SpecialExpense::query()
+            ->where('payment_method', 'gcash')
+            ->whereNull('branch_id')
+            ->sum('amount');
     }
 
     /**

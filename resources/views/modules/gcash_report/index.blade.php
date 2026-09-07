@@ -85,6 +85,11 @@
                         @endif
                         · in ₱{{ number_format($wallet['inflow'], 2) }}
                         · out ₱{{ number_format($wallet['outflow'], 2) }}
+                        @if (abs($wallet['company_wide_overhead'] ?? 0) > 0.001)
+                            {{-- Called out separately because it belongs to no single branch,
+                                 so it appears in no per-branch line below. --}}
+                            · company-wide overhead ₱{{ number_format($wallet['company_wide_overhead'], 2) }}
+                        @endif
                         @if (abs($wallet['adjustments']) > 0.001)
                             · adjustments {{ $wallet['adjustments'] < 0 ? '−' : '+' }}₱{{ number_format(abs($wallet['adjustments']), 2) }}
                         @endif

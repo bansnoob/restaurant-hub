@@ -308,9 +308,18 @@
             <div class="rh-dash-panel">
                 <div class="rh-dash-panel-header">
                     <p class="rh-dash-panel-title">{{ now()->format('F Y') }}</p>
-                    <span class="rh-dash-panel-link" style="cursor: default; opacity: 0.6;">Month-to-date</span>
+                    @role('owner')
+                        <a href="{{ route('special-expenses.index') }}" class="rh-dash-panel-link">Overhead</a>
+                    @endrole
                 </div>
-                <div class="rh-stat-grid rh-stat-grid--3" style="border: none; background: transparent; margin: 0;">
+                {{-- Four figures, not three. "Net" here is net AFTER overhead, so it is
+                     the only true-profit number on this page: revenue less daily
+                     operating expenses less monthly rent/electricity. Overhead is
+                     absent from every "today" figure by design (it lives in its own
+                     table so it can never reach the drawer count), which is exactly
+                     why it has to be added back at the month level or the owner
+                     never sees what the business actually earned. --}}
+                <div class="rh-stat-grid rh-stat-grid--4" style="border: none; background: transparent; margin: 0;">
                     <div class="rh-stat-card" style="--i:1; padding: 0.5rem 0;">
                         <p class="rh-stat-card-label">Revenue</p>
                         <p class="rh-stat-card-value rh-stat-value--accent">₱{{ number_format($mtdSales, 0) }}</p>
@@ -320,12 +329,33 @@
                         <p class="rh-stat-card-value">₱{{ number_format($mtdExpenses, 0) }}</p>
                     </div>
                     <div class="rh-stat-card" style="--i:3; padding: 0.5rem 0;">
-                        <p class="rh-stat-card-label">Net</p>
-                        <p class="rh-stat-card-value {{ ($mtdSales - $mtdExpenses) < 0 ? 'rh-stat-value--warn' : 'rh-stat-card-value--success' }}">
-                            ₱{{ number_format($mtdSales - $mtdExpenses, 0) }}
+                        <p class="rh-stat-card-label">Overhead</p>
+                        <p class="rh-stat-card-value rh-stat-value--warn">₱{{ number_format($mtdOverhead, 0) }}</p>
+                    </div>
+                    <div class="rh-stat-card" style="--i:4; padding: 0.5rem 0;">
+                        <p class="rh-stat-card-label">Net after OH</p>
+                        <p class="rh-stat-card-value {{ $mtdNetAfterOverhead < 0 ? 'rh-stat-value--warn' : 'rh-stat-card-value--success' }}">
+                            {{ $mtdNetAfterOverhead < 0 ? '−' : '' }}₱{{ number_format(abs($mtdNetAfterOverhead), 0) }}
                         </p>
                     </div>
                 </div>
+                @if (! empty($overheadBreakdown))
+                    <div class="rh-dash-oh-rows">
+                        @foreach ($overheadBreakdown as $row)
+                            <div class="rh-dash-oh-row">
+                                <span class="rh-dash-oh-name">{{ $row['name'] }}</span>
+                                <span class="rh-dash-oh-amount">₱{{ number_format($row['total'], 0) }}</span>
+                            </div>
+                        @endforeach
+                    </div>
+                @else
+                    <p class="rh-dash-oh-empty">
+                        No overhead recorded for {{ now()->format('F') }}
+                        @role('owner')
+                            · <a href="{{ route('special-expenses.index') }}">add rent or electricity</a>
+                        @endrole
+                    </p>
+                @endif
             </div>
 
             <div class="rh-dash-panel rh-dash-panel--sep">

@@ -13,6 +13,7 @@ use App\Http\Controllers\MenuController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SalesController;
+use App\Http\Controllers\SpecialExpenseController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -176,6 +177,27 @@ Route::middleware('auth')->group(function () {
     Route::get('/expenses', [ExpenseController::class, 'index'])
         ->middleware('role:owner')
         ->name('expenses.index');
+
+    // Monthly overhead (rent, electricity). Declared ABOVE the {expense} routes:
+    // a literal segment must beat a model-bound one, per the hazard noted further
+    // down this file. Reads and writes `special_expenses` only — never `expenses`,
+    // which feeds the drawer count and today's net income.
+    Route::get('/expenses/special', [SpecialExpenseController::class, 'index'])
+        ->middleware('role:owner')
+        ->name('special-expenses.index');
+    Route::get('/expenses/special/{specialExpense}/details', [SpecialExpenseController::class, 'show'])
+        ->middleware('role:owner')
+        ->name('special-expenses.show');
+    Route::post('/expenses/special', [SpecialExpenseController::class, 'store'])
+        ->middleware('role:owner')
+        ->name('special-expenses.store');
+    Route::put('/expenses/special/{specialExpense}', [SpecialExpenseController::class, 'update'])
+        ->middleware('role:owner')
+        ->name('special-expenses.update');
+    Route::delete('/expenses/special/{specialExpense}', [SpecialExpenseController::class, 'destroy'])
+        ->middleware('role:owner')
+        ->name('special-expenses.destroy');
+
     Route::get('/expenses/{expense}/details', [ExpenseController::class, 'show'])
         ->middleware('role:owner')
         ->name('expenses.show');
