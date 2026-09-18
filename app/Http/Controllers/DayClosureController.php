@@ -9,10 +9,12 @@ use App\Models\Branch;
 use App\Models\DayClosure;
 use App\Models\Expense;
 use App\Models\Sale;
+use App\Services\CashReportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
@@ -85,7 +87,7 @@ class DayClosureController extends Controller
     {
         $validated = $request->validate([
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
-            'closed_at_date' => ['required', 'date'],
+            'closed_at_date' => ['required', 'date', 'before_or_equal:today'],
             'opening_float' => ['nullable', 'numeric', 'min:0'],
             'counted_cash' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -164,42 +166,29 @@ class DayClosureController extends Controller
         return back()->with('success', $message);
     }
 
-    public function index(Request $request): View
+    public function index(Request $request, CashReportService $cashReport): View
     {
         $branchFilter = $request->query('branch_id');
         $dateFrom = $request->string('date_from')->toString() ?: now()->subDays(29)->toDateString();
         $dateTo = $request->string('date_to')->toString() ?: now()->toDateString();
+        $branchId = (! empty($branchFilter) && is_numeric($branchFilter)) ? (int) $branchFilter : null;
 
         $branches = Branch::where('is_active', true)->orderBy('name')->get();
 
-        $query = DayClosure::with(['branch:id,name', 'closedBy:id,name'])
-            ->whereDate('closed_at_date', '>=', $dateFrom)
-            ->whereDate('closed_at_date', '<=', $dateTo)
-            ->orderByDesc('closed_at_date')
-            ->orderByDesc('id');
+        // Unclosed days have no row to paginate over, so the union is built in memory and
+        // sliced here. The range bounds it: 30 days x branches, not the whole table.
+        $rows = $cashReport->dayRows($dateFrom, $dateTo, $branchId);
+        $totals = $cashReport->totals($rows);
 
-        if (! empty($branchFilter) && is_numeric($branchFilter)) {
-            $query->where('branch_id', (int) $branchFilter);
-        }
-
-        $closures = $query->paginate(30)->withQueryString();
-
-        $aggregateQuery = DayClosure::query()
-            ->whereDate('closed_at_date', '>=', $dateFrom)
-            ->whereDate('closed_at_date', '<=', $dateTo);
-        if (! empty($branchFilter) && is_numeric($branchFilter)) {
-            $aggregateQuery->where('branch_id', (int) $branchFilter);
-        }
-
-        $totals = [
-            'cash_on_hand' => (float) (clone $aggregateQuery)->sum('counted_cash'),
-            'expected_total' => (float) (clone $aggregateQuery)->sum('expected_cash'),
-            'variance_total' => (float) (clone $aggregateQuery)->sum('variance'),
-            'days_closed' => (clone $aggregateQuery)->count(),
-            'cash_sales_total' => (float) (clone $aggregateQuery)->sum('cash_sales_total'),
-            'mixed_cash_total' => (float) (clone $aggregateQuery)->sum('mixed_cash_total'),
-            'cash_expenses_total' => (float) (clone $aggregateQuery)->sum('cash_expenses_total'),
-        ];
+        $perPage = 30;
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $closures = new LengthAwarePaginator(
+            $rows->forPage($page, $perPage)->values(),
+            $rows->count(),
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
 
         return view('modules.day_closures.index', [
             'branches' => $branches,

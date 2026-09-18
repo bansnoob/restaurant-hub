@@ -8063,6 +8063,45 @@ select.rm-input {
 .rh-cash-variance-pill--short { background: var(--rh-error-bg); color: var(--rh-error-text); }
 .rh-cash-variance-pill--over  { background: var(--rh-amber-bg); color: var(--rh-amber-text); }
 
+/* A day that moved the till but was never closed. Deliberately neutral rather than an
+   error pill: the money is not short, it simply was never counted — and there is no
+   counted figure to compare against. Tokens only, so light and dark both resolve. */
+.rh-cash-variance-pill--open {
+    background: transparent;
+    color: var(--rh-text-muted);
+    border: 1px dashed var(--rh-border-2);
+}
+
+.rh-cash-table tr.rh-cash-row--open td { background: var(--rh-surface-2); }
+
+.rh-cash-gap-count { color: var(--rh-amber-text); }
+
+/* Row actions — Reopen on a closed day, Close on a gap. */
+.rh-cash-row-action {
+    display: inline-block;
+    font-family: var(--rh-font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    padding: 0.3rem 0.6rem;
+    border-radius: 5px;
+    background: transparent;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.rh-cash-row-action--reopen {
+    color: var(--rh-error-text);
+    border: 1px solid var(--rh-error-border);
+}
+
+.rh-cash-row-action--close {
+    color: var(--rh-accent);
+    border: 1px solid var(--rh-accent-border-md);
+}
+
+.rh-cash-row-action--close:hover { border-color: var(--rh-accent-hover); }
+
 
 /* GCash report — section headings and row actions.
    Tokens only, so light and dark both resolve. */

@@ -83,7 +83,7 @@ class DayClosureController extends Controller
     {
         $validated = $request->validate([
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
-            'closed_at_date' => ['required', 'date'],
+            'closed_at_date' => ['required', 'date', 'before_or_equal:today'],
             'opening_float' => ['nullable', 'numeric', 'min:0'],
             'counted_cash' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:2000'],

@@ -28,7 +28,11 @@
             previewUrl: @js(route('day-close.preview')),
             storeUrl: @js(route('day-close.store')),
             csrfToken: @js(csrf_token()),
+            today: @js(now()->toDateString()),
+            initialDate: @js(request()->query('close_date')),
+            initialBranchId: @js(request()->query('close_branch_id')),
         })"
+        x-init="openFromQuery()"
         @keydown.escape.window="closeDrawer()"
     >
         @if (session('success'))
@@ -476,6 +480,14 @@
                                 <input type="hidden" name="branch_id" :value="data.branch.id">
                                 <input type="hidden" name="closed_at_date" :value="data.date">
 
+                                {{-- A day missed at the time used to be unrecoverable: the drawer was
+                                     pinned to today, so the only closable day was the current one. --}}
+                                <div class="rm-field">
+                                    <label class="rm-field-label">Business day</label>
+                                    <input type="date" class="rm-input" :max="today"
+                                           x-model="selectedDate" @change="reloadPreview()">
+                                </div>
+
                                 <div class="rm-field">
                                     <label class="rm-field-label">Branch</label>
                                     <select class="rm-input" x-model.number="selectedBranchId" @change="reloadPreview()">
@@ -549,24 +561,37 @@
                 previewUrl: config.previewUrl,
                 storeUrl: config.storeUrl,
                 csrfToken: config.csrfToken,
+                today: config.today,
+                initialDate: config.initialDate || '',
+                initialBranchId: config.initialBranchId || '',
                 drawerOpen: false,
                 data: null,
                 submitting: false,
                 selectedBranchId: '',
+                selectedDate: '',
                 countedCash: '',
                 notes: '',
                 forcedClockoutIds: [],
-                async openDrawer() {
+                /* The Cash Report links here with ?close_date=&close_branch_id= so a gap
+                   can be filled in one click instead of being a dead end. */
+                openFromQuery() {
+                    if (!this.initialDate) return;
+                    this.openDrawer({ date: this.initialDate, branchId: this.initialBranchId });
+                },
+                async openDrawer(options = {}) {
                     this.drawerOpen = true;
                     this.data = null;
                     this.countedCash = '';
                     this.notes = '';
+                    this.selectedDate = options.date || this.today;
+                    if (options.branchId) this.selectedBranchId = options.branchId;
                     await this.loadPreview();
                 },
                 async loadPreview() {
                     try {
                         const url = new URL(this.previewUrl, window.location.origin);
                         if (this.selectedBranchId) url.searchParams.set('branch_id', this.selectedBranchId);
+                        if (this.selectedDate) url.searchParams.set('date', this.selectedDate);
                         const res = await fetch(url, {
                             headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                         });
@@ -574,6 +599,9 @@
                         const data = await res.json();
                         this.data = data;
                         this.selectedBranchId = data.branch.id;
+                        /* Trust the server's date so the hidden field and the totals below it
+                           can never describe two different days. */
+                        this.selectedDate = data.date;
                         this.forcedClockoutIds = data.still_clocked_in.map(e => e.attendance_id);
                     } catch (err) {
                         this.drawerOpen = false;
@@ -586,7 +614,10 @@
                 },
                 get expectedCash() {
                     if (!this.data) return 0;
-                    return Number(this.data.totals.cash_sales_total) + Number(this.data.totals.mixed_cash_total) - Number(this.data.totals.cash_expenses_total);
+                    /* Read the server's figure rather than recomputing it: the server folds in
+                       the opening float, and a local sum that omitted it would show a variance
+                       that disagreed with the one actually stored. */
+                    return Number(this.data.totals.expected_cash);
                 },
                 varianceValue() {
                     return Number(this.countedCash || 0) - this.expectedCash;
