@@ -21,7 +21,12 @@
         <div class="rh-pay-topbar">
             <div>
                 <h1 class="rh-pay-title">Cash Report</h1>
-                <p class="rh-pay-sub">{{ strtoupper($rangeLabel) }} · {{ $totals['days_closed'] }} {{ \Illuminate\Support\Str::plural('day', $totals['days_closed']) }} closed</p>
+                <p class="rh-pay-sub">
+                    {{ strtoupper($rangeLabel) }} · {{ $totals['days_closed'] }} {{ \Illuminate\Support\Str::plural('day', $totals['days_closed']) }} closed
+                    @if (($totals['days_unclosed'] ?? 0) > 0)
+                        · <span class="rh-cash-gap-count">{{ $totals['days_unclosed'] }} not closed</span>
+                    @endif
+                </p>
             </div>
         </div>
 
@@ -68,12 +73,12 @@
             </div>
         </form>
 
-        {{-- Closures table --}}
+        {{-- Day rows: closures plus any day that moved the till and was never closed --}}
         @if ($closures->isEmpty())
             <div class="rh-pay-list">
                 <div class="rh-pay-empty">
-                    <p class="rh-pay-empty-title">No closures yet</p>
-                    <p style="font-size: 0.82rem;">Day closures recorded from the dashboard will appear here.</p>
+                    <p class="rh-pay-empty-title">Nothing in this range</p>
+                    <p style="font-size: 0.82rem;">Days with cash sales or cash expenses appear here, closed or not.</p>
                 </div>
             </div>
         @else
@@ -95,10 +100,14 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach ($closures as $closure)
+                        @foreach ($closures as $row)
                             @php
-                                $variance = (float) $closure->variance;
-                                if (abs($variance) < 0.01) {
+                                $isClosed = (bool) $row['closed'];
+                                $variance = (float) ($row['variance'] ?? 0);
+                                if (! $isClosed) {
+                                    $varClass = 'rh-cash-variance-pill--open';
+                                    $varLabel = 'Not closed';
+                                } elseif (abs($variance) < 0.01) {
                                     $varClass = 'rh-cash-variance-pill--match';
                                     $varLabel = 'Match';
                                 } elseif ($variance < 0) {
@@ -108,27 +117,40 @@
                                     $varClass = 'rh-cash-variance-pill--over';
                                     $varLabel = '+₱'.number_format($variance, 2);
                                 }
-                                $totalCashSales = (float) $closure->cash_sales_total + (float) $closure->mixed_cash_total;
+                                $rowDate = \Carbon\Carbon::parse($row['date']);
                             @endphp
-                            <tr>
+                            <tr class="{{ $isClosed ? '' : 'rh-cash-row--open' }}">
                                 <td>
-                                    <strong>{{ \Carbon\Carbon::parse($closure->closed_at_date)->format('M j') }}</strong>
-                                    <span style="display: block; font-family: var(--rh-font-mono); font-size: 0.6rem; color: var(--rh-text-muted); margin-top: 0.15rem;">{{ \Carbon\Carbon::parse($closure->closed_at_date)->format('Y') }}</span>
+                                    <strong>{{ $rowDate->format('M j') }}</strong>
+                                    <span style="display: block; font-family: var(--rh-font-mono); font-size: 0.6rem; color: var(--rh-text-muted); margin-top: 0.15rem;">{{ $rowDate->format('Y') }}</span>
                                 </td>
-                                <td>{{ $closure->branch?->name ?? '—' }}</td>
-                                <td style="font-family: var(--rh-font-mono); font-size: 0.7rem; color: var(--rh-text-muted);">{{ $closure->closedBy?->name ?? '—' }}</td>
-                                <td class="num num--success">₱{{ number_format($totalCashSales, 2) }}</td>
-                                <td class="num num--warn">₱{{ number_format((float) $closure->cash_expenses_total, 2) }}</td>
-                                <td class="num">₱{{ number_format((float) $closure->expected_cash, 2) }}</td>
-                                <td class="num num--accent">₱{{ number_format((float) $closure->counted_cash, 2) }}</td>
+                                <td>{{ $row['branch_name'] ?? '—' }}</td>
+                                <td style="font-family: var(--rh-font-mono); font-size: 0.7rem; color: var(--rh-text-muted);">{{ $row['closed_by'] ?? '—' }}</td>
+                                <td class="num num--success">₱{{ number_format((float) $row['cash_sales_total'], 2) }}</td>
+                                <td class="num num--warn">₱{{ number_format((float) $row['cash_expenses_total'], 2) }}</td>
+                                <td class="num">₱{{ number_format((float) $row['expected_cash'], 2) }}</td>
+                                <td class="num {{ $isClosed ? 'num--accent' : '' }}">
+                                    @if ($isClosed)
+                                        ₱{{ number_format((float) $row['counted_cash'], 2) }}
+                                    @else
+                                        <span style="color: var(--rh-text-muted);">—</span>
+                                    @endif
+                                </td>
                                 <td class="center"><span class="rh-cash-variance-pill {{ $varClass }}">{{ $varLabel }}</span></td>
                                 @if ($isOwner)
                                     <td>
-                                        <form method="POST" action="{{ route('day-close.destroy', $closure) }}" onsubmit="return confirm('Reopen this day? The closure record will be removed.');">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" style="font-family: var(--rh-font-mono); font-size: 0.6rem; letter-spacing: 0.06em; color: var(--rh-error-text); background: transparent; border: 1px solid var(--rh-error-border); padding: 0.3rem 0.6rem; border-radius: 5px; cursor: pointer;">Reopen</button>
-                                        </form>
+                                        @if ($isClosed)
+                                            <form method="POST" action="{{ route('day-close.destroy', $row['closure']) }}" onsubmit="return confirm('Reopen this day? The closure record will be removed.');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="rh-cash-row-action rh-cash-row-action--reopen">Reopen</button>
+                                            </form>
+                                        @else
+                                            {{-- Sends the dashboard straight into the Close Day drawer for this
+                                                 past date, which is the only way to fill a gap after the fact. --}}
+                                            <a href="{{ route('dashboard', ['close_date' => $row['date'], 'close_branch_id' => $row['branch_id']]) }}"
+                                               class="rh-cash-row-action rh-cash-row-action--close">Close</a>
+                                        @endif
                                     </td>
                                 @endif
                             </tr>
