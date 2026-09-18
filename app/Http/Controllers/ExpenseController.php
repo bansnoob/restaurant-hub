@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\Expense;
+use App\Services\DayClosureRecalculator;
 use App\Models\ExpenseCategory;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -18,6 +19,8 @@ use Illuminate\View\View;
 
 class ExpenseController extends Controller
 {
+    public function __construct(private readonly DayClosureRecalculator $recalculator) {}
+
     private const PAYMENT_METHODS = ['cash', 'bank_transfer', 'gcash', 'other'];
 
     public function index(Request $request): View
@@ -159,7 +162,7 @@ class ExpenseController extends Controller
             $validated['expense_category_id'] = $category->id;
         }
 
-        Expense::create([
+        $expense = Expense::create([
             'branch_id' => $validated['branch_id'],
             'expense_category_id' => $validated['expense_category_id'] ?? null,
             'recorded_by_user_id' => $request->user()->id,
@@ -173,11 +176,18 @@ class ExpenseController extends Controller
             'notes' => $validated['notes'] ?? null,
         ]);
 
+        // A closed day's figures are derived from these rows, so they have to follow.
+        // No-op when the day is not closed.
+        $this->recalculator->recalculateFor((int) $expense->branch_id, $expense->expense_date);
+
         return back()->with('success', 'Expense recorded successfully.');
     }
 
     public function update(Request $request, Expense $expense): RedirectResponse
     {
+        $originalBranchId = (int) $expense->branch_id;
+        $originalDate = $expense->expense_date;
+
         $validated = $request->validate([
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
             'expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
@@ -217,16 +227,30 @@ class ExpenseController extends Controller
             'notes' => $validated['notes'] ?? null,
         ]);
 
+        // Both ends: an expense moved off a day leaves that day overstated, and the day
+        // it landed on understated. Recomputing only the destination fixes half of it.
+        $this->recalculator->recalculateForMove(
+            $originalBranchId,
+            $originalDate,
+            (int) $expense->branch_id,
+            $expense->expense_date
+        );
+
         return back()->with('success', 'Expense updated successfully.');
     }
 
     public function destroy(Expense $expense): RedirectResponse
     {
+        $branchId = (int) $expense->branch_id;
+        $date = $expense->expense_date;
+
         try {
             $expense->delete();
         } catch (QueryException) {
             return back()->with('error', 'Unable to delete expense.');
         }
+
+        $this->recalculator->recalculateFor($branchId, $date);
 
         return back()->with('success', 'Expense deleted successfully.');
     }

@@ -157,12 +157,14 @@ class GcashRecordManagementTest extends TestCase
 
         $this->actingAs($this->owner)
             ->post(route('gcash-report.records.store'), $this->recordPayload())
-            ->assertSessionHas('error');
+            ->assertSessionHas('success');
 
-        $this->assertDatabaseCount('sales', 0);
+        $this->assertDatabaseCount('sales', 1);
+        // The closure follows the record instead of forbidding it.
+        $this->assertSame(500.0, round((float) DayClosure::firstOrFail()->gcash_sales_total, 2));
     }
 
-    public function test_records_on_a_closed_day_cannot_be_edited_or_deleted(): void
+    public function test_records_on_a_closed_day_can_be_edited_and_the_closure_follows(): void
     {
         $this->actingAs($this->owner)->post(route('gcash-report.records.store'), $this->recordPayload());
         $sale = Sale::firstOrFail();
@@ -174,18 +176,28 @@ class GcashRecordManagementTest extends TestCase
             'closed_at' => now(),
         ]);
 
+        $closure = DayClosure::firstOrFail();
+
         $this->actingAs($this->owner)
             ->put(route('gcash-report.records.update', $sale), $this->recordPayload(['amount' => 9.00]))
-            ->assertSessionHas('error');
+            ->assertSessionHas('success');
+
+        $this->assertSame(9.0, round((float) $sale->fresh()->grand_total, 2));
+        $this->assertSame(9.0, round((float) $closure->fresh()->gcash_sales_total, 2));
 
         $this->actingAs($this->owner)
             ->delete(route('gcash-report.records.destroy', $sale))
-            ->assertSessionHas('error');
+            ->assertSessionHas('success');
 
-        $this->assertSame('500.00', (string) $sale->fresh()->grand_total);
+        $this->assertSame(0.0, round((float) $closure->fresh()->gcash_sales_total, 2));
     }
 
-    public function test_a_record_cannot_be_moved_onto_a_closed_day(): void
+    /**
+     * Moving a record between days must leave BOTH closures right — the one it left
+     * and the one it landed on. Recomputing only the destination would leave the
+     * origin permanently overstating its GCash total.
+     */
+    public function test_moving_a_record_onto_a_closed_day_recomputes_both_days(): void
     {
         $this->actingAs($this->owner)->post(route('gcash-report.records.store'), $this->recordPayload());
         $sale = Sale::firstOrFail();
@@ -198,11 +210,23 @@ class GcashRecordManagementTest extends TestCase
             'closed_at' => now(),
         ]);
 
+        $todayClosure = DayClosure::create([
+            'branch_id' => $this->branch->id,
+            'closed_at_date' => now()->toDateString(),
+            'closed_by_user_id' => $this->owner->id,
+            'closed_at' => now(),
+        ]);
+        $yesterdayClosure = DayClosure::whereDate('closed_at_date', $closedDay)->firstOrFail();
+
         $this->actingAs($this->owner)
             ->put(route('gcash-report.records.update', $sale), $this->recordPayload(['sale_date' => $closedDay]))
-            ->assertSessionHas('error');
+            ->assertSessionHas('success');
 
-        $this->assertSame(now()->toDateString(), $sale->fresh()->sale_datetime->toDateString());
+        $this->assertSame($closedDay, $sale->fresh()->sale_datetime->toDateString());
+        // Landed on yesterday...
+        $this->assertSame(500.0, round((float) $yesterdayClosure->fresh()->gcash_sales_total, 2));
+        // ...and left today, which must no longer claim it.
+        $this->assertSame(0.0, round((float) $todayClosure->fresh()->gcash_sales_total, 2));
     }
 
     public function test_record_validation_rejects_bad_input(): void
