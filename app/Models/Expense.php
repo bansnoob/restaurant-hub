@@ -10,6 +10,13 @@ class Expense extends Model
 {
     use HasFactory;
 
+    /**
+     * Where the cash came from. Only a drawer-paid expense belongs in a day's
+     * closure: an outside-paid one left the safe, not the till, so charging it to
+     * the day would report a shortage the cashier never caused.
+     */
+    public const PAID_FROM = ['drawer', 'outside'];
+
     protected $fillable = [
         'branch_id',
         'expense_category_id',
@@ -20,6 +27,7 @@ class Expense extends Model
         'description',
         'amount',
         'payment_method',
+        'paid_from',
         'status',
         'notes',
     ];

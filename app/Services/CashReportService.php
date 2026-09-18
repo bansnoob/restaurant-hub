@@ -56,15 +56,15 @@ class CashReportService
     public function totals(Collection $rows, string $dateFrom, string $dateTo, ?int $branchId = null): array
     {
         $closed = $rows->where('closed', true);
-        $cashOverhead = $this->cashOverhead($dateFrom, $dateTo, $branchId);
+        $paidOutside = $this->cashOverhead($dateFrom, $dateTo, $branchId)
+            + $this->paidOutsideDrawer($dateFrom, $dateTo, $branchId);
 
         return [
-            // Net of overhead: monthly costs settled in cash genuinely left the
-            // business's cash, so a figure that ignored them would overstate what
-            // is actually held. The deduction is surfaced as its own figure below
-            // rather than silently shrinking this one.
-            'cash_on_hand' => round((float) $closed->sum('counted_cash') - $cashOverhead, 2),
-            'cash_overhead_total' => round($cashOverhead, 2),
+            // Every figure on the strip reconciles:
+            //   cash_on_hand = counted - paid_outside_total
+            //   cash_expenses_total = the day rows' own Cash Exp. column
+            'cash_on_hand' => round((float) $closed->sum('counted_cash') - $paidOutside, 2),
+            'paid_outside_total' => round($paidOutside, 2),
             'expected_total' => round((float) $rows->sum('expected_cash'), 2),
             'variance_total' => round((float) $closed->sum('variance'), 2),
             'days_closed' => $closed->count(),
@@ -91,6 +91,25 @@ class CashReportService
      *  - a company-wide row (branch_id null) belongs to no single branch, so it is
      *    excluded from a single-branch view and deducted from the all-branches figure.
      */
+    /**
+     * Daily expenses settled in cash that did not come out of a till.
+     *
+     * Real cash out of the business, so it reduces what is held — but it never passed
+     * through a drawer, so it is a range position and not part of any day's
+     * reconciliation. Dated on expense_date, the day the money moved.
+     */
+    private function paidOutsideDrawer(string $dateFrom, string $dateTo, ?int $branchId): float
+    {
+        return (float) Expense::query()
+            ->where('status', 'approved')
+            ->where('payment_method', 'cash')
+            ->where('paid_from', 'outside')
+            ->whereDate('expense_date', '>=', $dateFrom)
+            ->whereDate('expense_date', '<=', $dateTo)
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->sum('amount');
+    }
+
     private function cashOverhead(string $dateFrom, string $dateTo, ?int $branchId): float
     {
         $query = SpecialExpense::query()->where('payment_method', 'cash');
@@ -190,7 +209,7 @@ class CashReportService
             ->get([
                 'branch_id',
                 DB::raw('expense_date as day'),
-                DB::raw("SUM(CASE WHEN payment_method = 'cash' THEN amount ELSE 0 END) as cash_expenses"),
+                DB::raw("SUM(CASE WHEN payment_method = 'cash' AND paid_from = 'drawer' THEN amount ELSE 0 END) as cash_expenses"),
                 DB::raw('COUNT(*) as expense_count'),
             ]);
     }

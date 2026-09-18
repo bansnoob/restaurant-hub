@@ -144,6 +144,7 @@ class ExpenseController extends Controller
             'description' => ['required', 'string', 'max:200'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'payment_method' => ['required', Rule::in(self::PAYMENT_METHODS)],
+            'paid_from' => ['nullable', Rule::in(Expense::PAID_FROM)],
             'notes' => ['nullable', 'string', 'max:2000'],
             'new_category_name' => ['nullable', 'string', 'max:100'],
         ]);
@@ -172,6 +173,10 @@ class ExpenseController extends Controller
             'description' => $validated['description'],
             'amount' => $validated['amount'],
             'payment_method' => $validated['payment_method'],
+            // Non-cash has no drawer to come from, so it is never 'outside'.
+            'paid_from' => $validated['payment_method'] === 'cash'
+                ? ($validated['paid_from'] ?? 'drawer')
+                : 'drawer',
             'status' => 'approved',
             'notes' => $validated['notes'] ?? null,
         ]);
@@ -197,6 +202,7 @@ class ExpenseController extends Controller
             'description' => ['required', 'string', 'max:200'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'payment_method' => ['required', Rule::in(self::PAYMENT_METHODS)],
+            'paid_from' => ['nullable', Rule::in(Expense::PAID_FROM)],
             'notes' => ['nullable', 'string', 'max:2000'],
             'new_category_name' => ['nullable', 'string', 'max:100'],
         ]);
@@ -224,6 +230,9 @@ class ExpenseController extends Controller
             'description' => $validated['description'],
             'amount' => $validated['amount'],
             'payment_method' => $validated['payment_method'],
+            'paid_from' => $validated['payment_method'] === 'cash'
+                ? ($validated['paid_from'] ?? 'drawer')
+                : 'drawer',
             'notes' => $validated['notes'] ?? null,
         ]);
 

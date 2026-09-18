@@ -25,9 +25,15 @@ class ExpenseFactory extends Factory
             'description' => fake()->sentence(3),
             'amount' => fake()->randomFloat(2, 50, 5000),
             'payment_method' => 'cash',
+            'paid_from' => 'drawer',
             'status' => 'approved',
             'notes' => null,
         ];
+    }
+
+    public function outside(): static
+    {
+        return $this->state(fn () => ['paid_from' => 'outside']);
     }
 
     public function gcash(): static

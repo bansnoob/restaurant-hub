@@ -58,8 +58,11 @@
                 </p>
             </div>
             <div class="rh-pay-stat" style="--i:2;">
-                <p class="rh-pay-stat-label">Cash Overhead</p>
-                <p class="rh-pay-stat-value rh-pay-stat-value--warn">₱{{ number_format($totals['cash_overhead_total'], 2) }}</p>
+                {{-- Cash that left the business without passing through a till: monthly
+                     overhead settled in cash, plus expenses marked paid from outside.
+                     Neither belongs to a day's drawer, both reduce what is held. --}}
+                <p class="rh-pay-stat-label">Paid Outside Drawer</p>
+                <p class="rh-pay-stat-value rh-pay-stat-value--warn">₱{{ number_format($totals['paid_outside_total'], 2) }}</p>
             </div>
             <div class="rh-pay-stat" style="--i:3;">
                 <p class="rh-pay-stat-label">Cash Expenses</p>
@@ -220,6 +223,15 @@
                                                     <input type="number" step="0.01" min="0" class="rm-input"
                                                            :name="'expenses[' + i + '][amount]'" x-model.number="row.amount">
                                                 </td>
+                                                <td style="width:8rem;">
+                                                    {{-- Only drawer-paid rows count against this day's
+                                                         expected cash; outside-paid left the safe. --}}
+                                                    <select class="rm-input" :name="'expenses[' + i + '][paid_from]'"
+                                                            x-model="row.paid_from">
+                                                        <option value="drawer">Drawer</option>
+                                                        <option value="outside">Outside</option>
+                                                    </select>
+                                                </td>
                                                 <td style="width:2.5rem;">
                                                     <button type="button" class="rh-cash-row-action rh-cash-row-action--reopen"
                                                             @click="removeExpense(i)">&times;</button>
@@ -236,7 +248,7 @@
 
                                 <div class="rh-close-breakdown" style="margin-top:1rem;">
                                     <div class="rh-close-line">
-                                        <span>&minus; Cash expenses</span>
+                                        <span>&minus; Cash expenses <span style="opacity:0.6;">(from drawer)</span></span>
                                         <span x-text="peso(expensesTotal)"></span>
                                     </div>
                                     <div class="rh-close-line">
@@ -290,7 +302,11 @@
                     return config.updateUrlTemplate.replace('__ID__', this.editingId);
                 },
                 get expensesTotal() {
-                    return this.expenses.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+                    /* Only what came out of the till. An outside-paid row is real cash
+                       out of the business, but the drawer never held it. */
+                    return this.expenses
+                        .filter(r => r.paid_from !== 'outside')
+                        .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
                 },
                 get expectedCash() {
                     if (!this.day) return 0;
@@ -311,7 +327,7 @@
                     return this.variance < 0 ? 'rh-close-variance--short' : 'rh-close-variance--over';
                 },
                 addExpense() {
-                    this.expenses.push({ id: null, description: '', amount: 0 });
+                    this.expenses.push({ id: null, description: '', amount: 0, paid_from: 'drawer' });
                 },
                 removeExpense(index) {
                     const row = this.expenses[index];
@@ -334,7 +350,12 @@
                         if (!res.ok) throw new Error('Failed to load');
                         const data = await res.json();
                         this.day = data;
-                        this.expenses = data.expenses.map(e => ({ id: e.id, description: e.description || '', amount: Number(e.amount) }));
+                        this.expenses = data.expenses.map(e => ({
+                            id: e.id,
+                            description: e.description || '',
+                            amount: Number(e.amount),
+                            paid_from: e.paid_from || 'drawer',
+                        }));
                         this.countedCash = Number(data.counted_cash);
                         this.notes = data.notes || '';
                     } catch (err) {
