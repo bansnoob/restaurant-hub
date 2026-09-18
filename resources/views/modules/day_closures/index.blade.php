@@ -34,13 +34,28 @@
              date range they answer nothing — a month of expected cash is not a figure
              anyone acts on, and daily overs and shorts cancel out, so a range total of
              ~0 reads as "balanced" whether every day matched or every day was wild.
-             Both stay per-row in the table below, which is where they mean something. --}}
+             Both stay per-row in the table below, which is where they mean something.
+
+             Cash on Hand is net of Cash Overhead, which sits beside it so the figure
+             never moves without the reason being on screen. Overhead is a range-level
+             position only — see CashReportService::cashOverhead() for why it must not
+             reach a day's expected_cash. --}}
         <div class="rh-pay-stats rh-cash-stats">
+            @php $cashOnHand = (float) $totals['cash_on_hand']; @endphp
             <div class="rh-pay-stat" style="--i:1;">
                 <p class="rh-pay-stat-label">Cash on Hand</p>
-                <p class="rh-pay-stat-value rh-pay-stat-value--success">₱{{ number_format($totals['cash_on_hand'], 2) }}</p>
+                {{-- Colour follows the sign. A window whose overhead payments exceed the
+                     tills counted in it nets out negative, and that figure must not be
+                     painted with the healthy colour. --}}
+                <p class="rh-pay-stat-value {{ $cashOnHand < 0 ? 'rh-pay-stat-value--warn' : 'rh-pay-stat-value--success' }}">
+                    {{ $cashOnHand < 0 ? '−₱'.number_format(abs($cashOnHand), 2) : '₱'.number_format($cashOnHand, 2) }}
+                </p>
             </div>
             <div class="rh-pay-stat" style="--i:2;">
+                <p class="rh-pay-stat-label">Cash Overhead</p>
+                <p class="rh-pay-stat-value rh-pay-stat-value--warn">₱{{ number_format($totals['cash_overhead_total'], 2) }}</p>
+            </div>
+            <div class="rh-pay-stat" style="--i:3;">
                 <p class="rh-pay-stat-label">Cash Expenses</p>
                 <p class="rh-pay-stat-value">₱{{ number_format($totals['cash_expenses_total'], 2) }}</p>
             </div>

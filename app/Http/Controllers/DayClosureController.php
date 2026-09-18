@@ -178,7 +178,7 @@ class DayClosureController extends Controller
         // Unclosed days have no row to paginate over, so the union is built in memory and
         // sliced here. The range bounds it: 30 days x branches, not the whole table.
         $rows = $cashReport->dayRows($dateFrom, $dateTo, $branchId);
-        $totals = $cashReport->totals($rows);
+        $totals = $cashReport->totals($rows, $dateFrom, $dateTo, $branchId);
 
         $perPage = 30;
         $page = LengthAwarePaginator::resolveCurrentPage();
