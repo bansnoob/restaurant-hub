@@ -8107,6 +8107,28 @@ select.rm-input {
 
 .rh-cash-row-action--close:hover { border-color: var(--rh-accent-hover); }
 
+.rh-cash-row-action--edit {
+    color: var(--rh-accent);
+    border: 1px solid var(--rh-accent-border-md);
+}
+
+.rh-cash-row-action--edit:hover { border-color: var(--rh-accent-hover); }
+
+.rh-cash-row-action[disabled] { opacity: 0.5; cursor: default; }
+
+/* Expense rows inside the Edit Day drawer. */
+.rh-cash-edit-table { width: 100%; border-collapse: collapse; }
+.rh-cash-edit-table td { padding: 0.25rem 0.25rem 0.25rem 0; vertical-align: middle; }
+.rh-cash-edit-table td:first-child { padding-left: 0; }
+
+.rm-drawer-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 1rem 1.25rem;
+    border-top: 1px solid var(--rh-border);
+}
+
 
 /* GCash report — section headings and row actions.
    Tokens only, so light and dark both resolve. */

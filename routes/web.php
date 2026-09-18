@@ -127,9 +127,14 @@ Route::middleware('auth')->group(function () {
     Route::post('/day-close', [DayClosureController::class, 'store'])
         ->middleware('role:owner|cashier')
         ->name('day-close.store');
-    Route::delete('/day-close/{dayClosure}', [DayClosureController::class, 'destroy'])
+    // A closed day is corrected, never reopened. Deleting the closure used to be the
+    // only way to fix a day, which threw away the record of it having been closed.
+    Route::get('/day-close/{dayClosure}/edit', [DayClosureController::class, 'edit'])
         ->middleware('role:owner')
-        ->name('day-close.destroy');
+        ->name('day-close.edit');
+    Route::put('/day-close/{dayClosure}', [DayClosureController::class, 'update'])
+        ->middleware('role:owner')
+        ->name('day-close.update');
 
     // GCash report (read-only, built from individual GCash sales).
     // Owner-only: this exposes per-transaction sales rows and expense totals, the same class

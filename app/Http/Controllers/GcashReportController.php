@@ -13,6 +13,7 @@ use App\Models\GcashEntryStatus;
 use App\Models\GcashWallet;
 use App\Models\Sale;
 use App\Models\SpecialExpense;
+use App\Services\DayClosureRecalculator;
 use App\Services\SaleService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -28,6 +29,8 @@ use Illuminate\View\View;
  */
 class GcashReportController extends Controller
 {
+    public function __construct(private readonly DayClosureRecalculator $recalculator) {}
+
     private const PER_PAGE = 20;
 
     private const DEFAULT_RANGE_DAYS = 29;
@@ -113,13 +116,9 @@ class GcashReportController extends Controller
     {
         $validated = $request->validate($this->recordRules());
 
-        if ($blocked = $this->dayClosedResponse((int) $validated['branch_id'], $validated['sale_date'])) {
-            return $blocked;
-        }
-
         $date = Carbon::parse($validated['sale_date']);
 
-        Sale::create([
+        $sale = Sale::create([
             'branch_id' => (int) $validated['branch_id'],
             'order_number' => $sales->generateOrderNumber(
                 (int) $validated['branch_id'],
@@ -144,6 +143,8 @@ class GcashReportController extends Controller
             'closed_at' => now(),
         ]);
 
+        $this->recalculator->recalculateFor((int) $sale->branch_id, $sale->sale_datetime?->toDateString());
+
         return back()->with('success', 'GCash record added.');
     }
 
@@ -155,15 +156,8 @@ class GcashReportController extends Controller
 
         $validated = $request->validate($this->recordRules());
 
-        // Both the day it is leaving and the day it is landing on must still be open.
-        foreach ([$sale->sale_datetime?->toDateString(), $validated['sale_date']] as $date) {
-            if ($date && ($blocked = $this->dayClosedResponse((int) $sale->branch_id, $date))) {
-                return $blocked;
-            }
-        }
-        if ($blocked = $this->dayClosedResponse((int) $validated['branch_id'], $validated['sale_date'])) {
-            return $blocked;
-        }
+        $originalBranchId = (int) $sale->branch_id;
+        $originalDate = $sale->sale_datetime?->toDateString();
 
         $date = Carbon::parse($validated['sale_date']);
         $movedDay = $sale->sale_datetime?->toDateString() !== $date->toDateString();
@@ -183,6 +177,15 @@ class GcashReportController extends Controller
             'notes' => $validated['description'],
         ]);
 
+        // A closed day's gcash_sales_total is derived from these rows, so it follows the
+        // edit rather than blocking it. Both ends, because the record may have moved.
+        $this->recalculator->recalculateForMove(
+            $originalBranchId,
+            $originalDate,
+            (int) $sale->branch_id,
+            $sale->sale_datetime?->toDateString()
+        );
+
         return back()->with('success', 'GCash record updated.');
     }
 
@@ -192,11 +195,12 @@ class GcashReportController extends Controller
             return $blocked;
         }
 
-        if ($blocked = $this->dayClosedResponse((int) $sale->branch_id, $sale->sale_datetime?->toDateString())) {
-            return $blocked;
-        }
+        $branchId = (int) $sale->branch_id;
+        $date = $sale->sale_datetime?->toDateString();
 
         $sale->delete();
+
+        $this->recalculator->recalculateFor($branchId, $date);
 
         return back()->with('success', 'GCash record deleted.');
     }
@@ -640,31 +644,6 @@ class GcashReportController extends Controller
         }
 
         return null;
-    }
-
-    /**
-     * A day closure stores gcash_sales_total as a snapshot taken at closing time. Changing a
-     * sale afterwards would leave that snapshot stale and make this report disagree with the
-     * Cash Report, so the day must be reopened first.
-     */
-    private function dayClosedResponse(int $branchId, ?string $date): ?RedirectResponse
-    {
-        if (! $date) {
-            return null;
-        }
-
-        $closed = DayClosure::where('branch_id', $branchId)
-            ->whereDate('closed_at_date', $date)
-            ->exists();
-
-        if (! $closed) {
-            return null;
-        }
-
-        return back()->with('error', sprintf(
-            'The day %s is already closed for this branch. Reopen it on the Cash Report before changing GCash records.',
-            Carbon::parse($date)->format('M j, Y')
-        ));
     }
 
     /**

@@ -10,6 +10,7 @@ use App\Models\DayClosure;
 use App\Models\Expense;
 use App\Models\Sale;
 use App\Services\CashReportService;
+use App\Services\DayClosureRecalculator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -202,15 +203,128 @@ class DayClosureController extends Controller
         ]);
     }
 
-    public function destroy(Request $request, DayClosure $dayClosure): RedirectResponse
+    /**
+     * The day's current state for the Edit Day dialog.
+     *
+     * Sales are reported but not editable: they come from the POS and are the audit
+     * trail this figure is checked against. Cash expenses are what actually gets
+     * corrected after the fact, so those come back as rows.
+     */
+    public function edit(DayClosure $dayClosure): JsonResponse
     {
-        if (! $request->user()->hasRole('owner')) {
-            return back()->with('error', 'Only owners can reopen a closed day.');
+        $date = $dayClosure->closed_at_date->format('Y-m-d');
+        $branchId = (int) $dayClosure->branch_id;
+
+        $expenses = Expense::query()
+            ->where('branch_id', $branchId)
+            ->where('status', 'approved')
+            ->where('payment_method', 'cash')
+            ->whereDate('expense_date', $date)
+            ->orderBy('id')
+            ->get(['id', 'description', 'vendor_name', 'amount']);
+
+        $totals = $this->recalculator()->totalsFor($branchId, $date);
+
+        return response()->json([
+            'id' => $dayClosure->id,
+            'date' => $date,
+            'date_label' => $dayClosure->closed_at_date->format('l, M j, Y'),
+            'branch' => ['id' => $branchId, 'name' => $dayClosure->branch?->name],
+            'opening_float' => (float) $dayClosure->opening_float,
+            'counted_cash' => (float) $dayClosure->counted_cash,
+            'notes' => $dayClosure->notes,
+            'cash_sales_total' => round($totals['cash_sales_total'] + $totals['mixed_cash_total'], 2),
+            'order_count' => $totals['order_count'],
+            'cash_expenses_total' => round($totals['cash_expenses_total'], 2),
+            'expenses' => $expenses->map(fn (Expense $e) => [
+                'id' => $e->id,
+                'description' => $e->description,
+                'vendor_name' => $e->vendor_name,
+                'amount' => (float) $e->amount,
+            ]),
+        ]);
+    }
+
+    /**
+     * Apply an edit to a closed day.
+     *
+     * Counted cash, notes and the day's cash expenses all move together in one
+     * transaction, then the closure is recomputed from the rows that now exist. Doing
+     * the arithmetic here instead of trusting the client is what keeps expected_cash
+     * honest — it is always a function of the rows, never of what a form posted.
+     */
+    public function update(Request $request, DayClosure $dayClosure, DayClosureRecalculator $recalculator): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'counted_cash' => ['required', 'numeric', 'min:0'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+            'expenses' => ['nullable', 'array'],
+            'expenses.*.id' => ['nullable', 'integer', 'exists:expenses,id'],
+            'expenses.*.description' => ['nullable', 'string', 'max:255'],
+            'expenses.*.vendor_name' => ['nullable', 'string', 'max:140'],
+            'expenses.*.amount' => ['required_with:expenses', 'numeric', 'min:0'],
+            'deleted_expense_ids' => ['nullable', 'array'],
+            'deleted_expense_ids.*' => ['integer', 'exists:expenses,id'],
+        ]);
+
+        $date = $dayClosure->closed_at_date->format('Y-m-d');
+        $branchId = (int) $dayClosure->branch_id;
+
+        DB::transaction(function () use ($validated, $dayClosure, $branchId, $date, $request) {
+            // Scoped to this branch and date so an id from another day cannot be
+            // smuggled in through the form and silently deleted.
+            $ownExpenses = Expense::query()
+                ->where('branch_id', $branchId)
+                ->whereDate('expense_date', $date)
+                ->pluck('id')
+                ->all();
+
+            foreach ($validated['deleted_expense_ids'] ?? [] as $deleteId) {
+                if (in_array((int) $deleteId, $ownExpenses, true)) {
+                    Expense::where('id', $deleteId)->delete();
+                }
+            }
+
+            foreach ($validated['expenses'] ?? [] as $row) {
+                $payload = [
+                    'description' => $row['description'] ?? null,
+                    'vendor_name' => $row['vendor_name'] ?? null,
+                    'amount' => round((float) $row['amount'], 2),
+                ];
+
+                if (! empty($row['id']) && in_array((int) $row['id'], $ownExpenses, true)) {
+                    Expense::where('id', $row['id'])->update($payload);
+
+                    continue;
+                }
+
+                Expense::create($payload + [
+                    'branch_id' => $branchId,
+                    'expense_date' => $date,
+                    'payment_method' => 'cash',
+                    'status' => 'approved',
+                    'recorded_by_user_id' => $request->user()->id,
+                ]);
+            }
+
+            $dayClosure->update([
+                'counted_cash' => round((float) $validated['counted_cash'], 2),
+                'notes' => $validated['notes'] ?? null,
+            ]);
+        });
+
+        $recalculator->recalculate($dayClosure->refresh());
+
+        if ($request->wantsJson()) {
+            return response()->json(['closure' => $dayClosure->fresh()]);
         }
 
-        $dayClosure->delete();
+        return back()->with('success', 'Day updated.');
+    }
 
-        return back()->with('success', 'Day closure removed. The day is reopened.');
+    private function recalculator(): DayClosureRecalculator
+    {
+        return app(DayClosureRecalculator::class);
     }
 
     /**
@@ -218,48 +332,10 @@ class DayClosureController extends Controller
      */
     private function computeTotals(int $branchId, string $date): array
     {
-        $salesQuery = Sale::query()
-            ->where('branch_id', $branchId)
-            ->where('status', 'completed')
-            ->whereDate('sale_datetime', $date);
-
-        $cashSales = (float) (clone $salesQuery)
-            ->where('payment_method', 'cash')
-            ->sum('grand_total');
-
-        $gcashSales = (float) (clone $salesQuery)
-            ->where('payment_method', 'gcash')
-            ->sum('grand_total');
-
-        $mixedCash = (float) (clone $salesQuery)
-            ->where('payment_method', 'mixed')
-            ->sum('cash_amount');
-
-        $mixedGcash = (float) (clone $salesQuery)
-            ->where('payment_method', 'mixed')
-            ->sum('gcash_amount');
-
-        $orderCount = (clone $salesQuery)->count();
-
-        $expensesQuery = Expense::query()
-            ->where('branch_id', $branchId)
-            ->where('status', 'approved')
-            ->whereDate('expense_date', $date);
-
-        $cashExpenses = (float) (clone $expensesQuery)
-            ->where('payment_method', 'cash')
-            ->sum('amount');
-
-        $expenseCount = (clone $expensesQuery)->count();
-
-        return [
-            'cash_sales_total' => $cashSales,
-            'mixed_cash_total' => $mixedCash,
-            'gcash_sales_total' => $gcashSales + $mixedGcash,
-            'cash_expenses_total' => $cashExpenses,
-            'order_count' => $orderCount,
-            'expense_count' => $expenseCount,
-        ];
+        // Delegated, not duplicated: this arithmetic also has to be right in the
+        // recalculator, and two copies of it drifting apart is precisely how a closure
+        // comes to disagree with its own rows.
+        return $this->recalculator()->totalsFor($branchId, $date);
     }
 
     private function defaultOpeningFloat(int $branchId, string $date): float
