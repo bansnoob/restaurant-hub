@@ -132,8 +132,10 @@ class DayClosureRecalculator
      * The canonical day totals. Cash, mixed-cash and GCash sales plus approved cash
      * expenses for one branch on one date.
      *
-     * Special expenses are deliberately absent: they live in their own table and are a
-     * range-level cash position, not a day's drawer. See CashReportService::cashOverhead().
+     * Two kinds of cash are deliberately absent, for the same reason: special expenses,
+     * which live in their own table, and expenses marked paid_from = 'outside'. Both are
+     * real cash leaving the business, and neither came out of this drawer. They are a
+     * range-level position — see CashReportService::cashOverhead() and paidOutsideDrawer().
      *
      * @return array{cash_sales_total: float, mixed_cash_total: float, gcash_sales_total: float, cash_expenses_total: float, order_count: int, expense_count: int}
      */
@@ -158,7 +160,10 @@ class DayClosureRecalculator
             ->whereDate('expense_date', $date)
             ->toBase()
             ->first([
-                DB::raw("COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN amount ELSE 0 END), 0) as cash_expenses"),
+                // paid_from = 'drawer' only: an outside-paid expense is real cash out of
+                // the business, but it never passed through this till, so it cannot be
+                // part of what the till is expected to hold.
+                DB::raw("COALESCE(SUM(CASE WHEN payment_method = 'cash' AND paid_from = 'drawer' THEN amount ELSE 0 END), 0) as cash_expenses"),
                 DB::raw('COUNT(*) as expense_count'),
             ]);
 

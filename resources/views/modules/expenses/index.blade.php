@@ -244,6 +244,7 @@
                             'description' => $expense->description,
                             'amount' => (float) $expense->amount,
                             'payment_method' => $expense->payment_method,
+                            'paid_from' => $expense->paid_from,
                             'notes' => $expense->notes,
                             'category_name' => $expense->category?->name,
                             'branch_name' => $expense->branch?->name,
@@ -393,6 +394,20 @@
                                 </select>
                             </div>
                         </div>
+
+                        {{-- Only cash has a drawer to come out of. Charging an outside-paid
+                             expense to a day's closure reports a shortage the cashier never
+                             caused — a P17,200 advance against a till that counted P2,000. --}}
+                        <div class="rm-field" x-show="form.payment_method === 'cash'">
+                            <label class="rm-field-label">Paid From</label>
+                            <select name="paid_from" class="rm-input" x-model="form.paid_from">
+                                <option value="drawer">Drawer — taken from the till</option>
+                                <option value="outside">Outside cash — safe, advance, owner</option>
+                            </select>
+                            <p class="rm-field-hint" x-show="form.paid_from === 'outside'">
+                                Reduces cash on hand, but not this day's expected drawer.
+                            </p>
+                        </div>
                         {{-- These inputs must submit every field ExpenseController::update writes:
                              it stores `$validated['x'] ?? null` for category, vendor, reference and
                              notes, so any field the form leaves out is wiped on save. The Alpine
@@ -467,6 +482,7 @@
                     description: '',
                     amount: 0,
                     payment_method: 'cash',
+                    paid_from: 'drawer',
                     notes: '',
                     category_name: '',
                     branch_name: '',
@@ -485,6 +501,7 @@
                     description: '',
                     amount: '',
                     payment_method: 'cash',
+                    paid_from: 'drawer',
                     notes: '',
                 },
                 resetForm() {
@@ -500,6 +517,7 @@
                         description: '',
                         amount: '',
                         payment_method: 'cash',
+                        paid_from: 'drawer',
                         notes: '',
                     };
                 },
@@ -520,6 +538,7 @@
                         description: payload.description,
                         amount: payload.amount,
                         payment_method: payload.payment_method,
+                        paid_from: payload.paid_from || 'drawer',
                         notes: payload.notes,
                         category_name: payload.category_name,
                         branch_name: payload.branch_name,
@@ -541,6 +560,7 @@
                         description: this.detail.description || '',
                         amount: this.detail.amount,
                         payment_method: this.detail.payment_method || 'cash',
+                        paid_from: this.detail.paid_from || 'drawer',
                         notes: this.detail.notes || '',
                     };
                     this.detailOpen = false;

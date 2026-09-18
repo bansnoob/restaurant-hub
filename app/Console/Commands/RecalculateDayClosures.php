@@ -19,7 +19,8 @@ class RecalculateDayClosures extends Command
 {
     protected $signature = 'closures:recalculate
                             {--apply : Write the corrections. Without this the command only reports.}
-                            {--branch= : Limit to one branch id}';
+                            {--branch= : Limit to one branch id}
+                            {--date=* : Limit to specific closed_at_date values (repeatable)}';
 
     protected $description = 'Report (or fix) day closures whose stored totals disagree with their sales and expenses';
 
@@ -29,6 +30,17 @@ class RecalculateDayClosures extends Command
 
         if ($this->option('branch')) {
             $query->where('branch_id', (int) $this->option('branch'));
+        }
+
+        // Targeted runs matter: a drifted day is not automatically a day that SHOULD be
+        // recomputed. Backdating cash that never passed through the till makes the live
+        // figure the wrong one, and those days have to be excluded by hand.
+        if ($dates = $this->option('date')) {
+            $query->where(function ($q) use ($dates) {
+                foreach ($dates as $date) {
+                    $q->orWhereDate('closed_at_date', $date);
+                }
+            });
         }
 
         $closures = $query->get();

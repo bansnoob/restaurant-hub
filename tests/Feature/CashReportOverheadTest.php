@@ -97,7 +97,7 @@ class CashReportOverheadTest extends TestCase
         $totals = $this->totals();
 
         $this->assertSame(600.0, round((float) $totals['cash_on_hand'], 2));
-        $this->assertSame(400.0, round((float) $totals['cash_overhead_total'], 2));
+        $this->assertSame(400.0, round((float) $totals['paid_outside_total'], 2));
     }
 
     /** THE trap. Overhead is a range position, never a day's reconciliation. */
@@ -143,7 +143,7 @@ class CashReportOverheadTest extends TestCase
 
         $totals = $this->totals();
 
-        $this->assertSame(50.0, round((float) $totals['cash_overhead_total'], 2));
+        $this->assertSame(50.0, round((float) $totals['paid_outside_total'], 2));
         $this->assertSame(950.0, round((float) $totals['cash_on_hand'], 2));
     }
 
@@ -159,7 +159,7 @@ class CashReportOverheadTest extends TestCase
 
         $totals = $this->totals();
 
-        $this->assertSame(0.0, round((float) $totals['cash_overhead_total'], 2));
+        $this->assertSame(0.0, round((float) $totals['paid_outside_total'], 2));
         $this->assertSame(1000.0, round((float) $totals['cash_on_hand'], 2));
     }
 
@@ -170,7 +170,7 @@ class CashReportOverheadTest extends TestCase
         $this->overhead(['amount' => 300, 'paid_date' => null]);
 
         // period_month is this month, which is inside the default window.
-        $this->assertSame(300.0, round((float) $this->totals()['cash_overhead_total'], 2));
+        $this->assertSame(300.0, round((float) $this->totals()['paid_outside_total'], 2));
     }
 
     /**
@@ -184,11 +184,11 @@ class CashReportOverheadTest extends TestCase
         $this->overhead(['amount' => 250, 'branch_id' => null]);
 
         $scoped = $this->totals(['branch_id' => $this->branch->id]);
-        $this->assertSame(0.0, round((float) $scoped['cash_overhead_total'], 2));
+        $this->assertSame(0.0, round((float) $scoped['paid_outside_total'], 2));
         $this->assertSame(1000.0, round((float) $scoped['cash_on_hand'], 2));
 
         $all = $this->totals();
-        $this->assertSame(250.0, round((float) $all['cash_overhead_total'], 2));
+        $this->assertSame(250.0, round((float) $all['paid_outside_total'], 2));
         $this->assertSame(750.0, round((float) $all['cash_on_hand'], 2));
     }
 
@@ -199,8 +199,8 @@ class CashReportOverheadTest extends TestCase
         $this->closedDay(now()->subDay()->toDateString(), 1000);
         $this->overhead(['amount' => 900, 'branch_id' => $other->id]);
 
-        $this->assertSame(0.0, round((float) $this->totals(['branch_id' => $this->branch->id])['cash_overhead_total'], 2));
-        $this->assertSame(900.0, round((float) $this->totals(['branch_id' => $other->id])['cash_overhead_total'], 2));
+        $this->assertSame(0.0, round((float) $this->totals(['branch_id' => $this->branch->id])['paid_outside_total'], 2));
+        $this->assertSame(900.0, round((float) $this->totals(['branch_id' => $other->id])['paid_outside_total'], 2));
     }
 
     /** Daily operating cash expenses and overhead stay separate figures. */
@@ -212,7 +212,7 @@ class CashReportOverheadTest extends TestCase
         $totals = $this->totals();
 
         $this->assertSame(0.0, round((float) $totals['cash_expenses_total'], 2));
-        $this->assertSame(400.0, round((float) $totals['cash_overhead_total'], 2));
+        $this->assertSame(400.0, round((float) $totals['paid_outside_total'], 2));
     }
 
     /**
@@ -270,6 +270,6 @@ class CashReportOverheadTest extends TestCase
 
         preg_match_all('/rh-pay-stat-label">([^<]+)</', $strip, $labels);
 
-        $this->assertSame(['Cash on Hand', 'Cash Overhead', 'Cash Expenses'], $labels[1]);
+        $this->assertSame(['Cash on Hand', 'Paid Outside Drawer', 'Cash Expenses'], $labels[1]);
     }
 }

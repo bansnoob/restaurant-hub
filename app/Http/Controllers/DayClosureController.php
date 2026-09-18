@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -221,7 +222,7 @@ class DayClosureController extends Controller
             ->where('payment_method', 'cash')
             ->whereDate('expense_date', $date)
             ->orderBy('id')
-            ->get(['id', 'description', 'vendor_name', 'amount']);
+            ->get(['id', 'description', 'vendor_name', 'amount', 'paid_from']);
 
         $totals = $this->recalculator()->totalsFor($branchId, $date);
 
@@ -241,6 +242,7 @@ class DayClosureController extends Controller
                 'description' => $e->description,
                 'vendor_name' => $e->vendor_name,
                 'amount' => (float) $e->amount,
+                'paid_from' => $e->paid_from,
             ]),
         ]);
     }
@@ -263,6 +265,7 @@ class DayClosureController extends Controller
             'expenses.*.description' => ['nullable', 'string', 'max:255'],
             'expenses.*.vendor_name' => ['nullable', 'string', 'max:140'],
             'expenses.*.amount' => ['required_with:expenses', 'numeric', 'min:0'],
+            'expenses.*.paid_from' => ['nullable', Rule::in(Expense::PAID_FROM)],
             'deleted_expense_ids' => ['nullable', 'array'],
             'deleted_expense_ids.*' => ['integer', 'exists:expenses,id'],
         ]);
@@ -290,6 +293,7 @@ class DayClosureController extends Controller
                     'description' => $row['description'] ?? null,
                     'vendor_name' => $row['vendor_name'] ?? null,
                     'amount' => round((float) $row['amount'], 2),
+                    'paid_from' => $row['paid_from'] ?? 'drawer',
                 ];
 
                 if (! empty($row['id']) && in_array((int) $row['id'], $ownExpenses, true)) {
