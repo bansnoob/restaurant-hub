@@ -30,23 +30,17 @@
             </div>
         </div>
 
-        {{-- Stats strip --}}
-        <div class="rh-pay-stats">
+        {{-- Stats strip. Expected and Variance are deliberately not here: summed across a
+             date range they answer nothing — a month of expected cash is not a figure
+             anyone acts on, and daily overs and shorts cancel out, so a range total of
+             ~0 reads as "balanced" whether every day matched or every day was wild.
+             Both stay per-row in the table below, which is where they mean something. --}}
+        <div class="rh-pay-stats rh-cash-stats">
             <div class="rh-pay-stat" style="--i:1;">
                 <p class="rh-pay-stat-label">Cash on Hand</p>
                 <p class="rh-pay-stat-value rh-pay-stat-value--success">₱{{ number_format($totals['cash_on_hand'], 2) }}</p>
             </div>
             <div class="rh-pay-stat" style="--i:2;">
-                <p class="rh-pay-stat-label">Expected</p>
-                <p class="rh-pay-stat-value">₱{{ number_format($totals['expected_total'], 2) }}</p>
-            </div>
-            <div class="rh-pay-stat" style="--i:3;">
-                <p class="rh-pay-stat-label">Variance</p>
-                <p class="rh-pay-stat-value {{ $totals['variance_total'] < 0 ? 'rh-pay-stat-value--warn' : ($totals['variance_total'] > 0 ? 'rh-pay-stat-value--accent' : 'rh-pay-stat-value--success') }}">
-                    {{ $totals['variance_total'] >= 0 ? '+' : '' }}₱{{ number_format($totals['variance_total'], 2) }}
-                </p>
-            </div>
-            <div class="rh-pay-stat" style="--i:4;">
                 <p class="rh-pay-stat-label">Cash Expenses</p>
                 <p class="rh-pay-stat-value">₱{{ number_format($totals['cash_expenses_total'], 2) }}</p>
             </div>
