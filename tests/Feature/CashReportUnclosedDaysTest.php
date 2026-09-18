@@ -321,6 +321,45 @@ class CashReportUnclosedDaysTest extends TestCase
         $this->assertSame($dates->sortDesc()->values()->all(), $dates->values()->all());
     }
 
+    /**
+     * The stats strip carries Cash on Hand and Cash Expenses only. Expected and Variance
+     * were removed because a range total of either answers nothing — overs and shorts
+     * cancel, so ~0 reads as "balanced" whether every day matched or every day was wild.
+     *
+     * Asserted structurally rather than with assertDontSee: both words still appear
+     * legitimately as table column headers.
+     */
+    public function test_the_stats_strip_carries_only_cash_on_hand_and_cash_expenses(): void
+    {
+        $this->sale(now()->subDay()->toDateString(), ['grand_total' => 100]);
+
+        $html = $this->actingAs($this->owner)
+            ->get(route('day-closures.index'))
+            ->assertOk()
+            ->getContent();
+
+        $strip = substr($html, strpos($html, 'rh-pay-stats'));
+        $strip = substr($strip, 0, strpos($strip, 'rh-pay-toolbar'));
+
+        preg_match_all('/rh-pay-stat-label">([^<]+)</', $strip, $labels);
+
+        $this->assertSame(['Cash on Hand', 'Cash Expenses'], $labels[1]);
+    }
+
+    /** The per-day figures stay — they are the ones anyone acts on. */
+    public function test_the_table_still_carries_per_day_expected_and_variance(): void
+    {
+        $date = now()->subDay()->toDateString();
+        $this->sale($date, ['grand_total' => 100]);
+        $this->closure($date, ['expected_cash' => 100, 'counted_cash' => 93, 'variance' => -7]);
+
+        $this->actingAs($this->owner)
+            ->get(route('day-closures.index'))
+            ->assertOk()
+            ->assertSee('93.00')      // counted, per row
+            ->assertSee('7.00');      // variance pill, per row
+    }
+
     /** Cashiers share this tab and must see the gaps too. */
     public function test_a_cashier_also_sees_unclosed_days(): void
     {
