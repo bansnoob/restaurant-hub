@@ -322,14 +322,15 @@ class CashReportUnclosedDaysTest extends TestCase
     }
 
     /**
-     * The stats strip carries Cash on Hand and Cash Expenses only. Expected and Variance
-     * were removed because a range total of either answers nothing — overs and shorts
-     * cancel, so ~0 reads as "balanced" whether every day matched or every day was wild.
+     * Expected and Variance are not range figures. Overs and shorts cancel, so a range
+     * total near zero reads as "balanced" whether every day matched or every day was
+     * wild — worse than uninformative on a screen used to spot problems.
      *
-     * Asserted structurally rather than with assertDontSee: both words still appear
-     * legitimately as table column headers.
+     * Asserted against the strip's labels rather than with assertDontSee: both words
+     * still appear legitimately as table column headers. Asserted as absence rather
+     * than an exact list so that adding a genuinely useful tile does not fail it.
      */
-    public function test_the_stats_strip_carries_only_cash_on_hand_and_cash_expenses(): void
+    public function test_the_stats_strip_carries_no_expected_or_variance_figure(): void
     {
         $this->sale(now()->subDay()->toDateString(), ['grand_total' => 100]);
 
@@ -343,7 +344,9 @@ class CashReportUnclosedDaysTest extends TestCase
 
         preg_match_all('/rh-pay-stat-label">([^<]+)</', $strip, $labels);
 
-        $this->assertSame(['Cash on Hand', 'Cash Expenses'], $labels[1]);
+        $this->assertNotContains('Expected', $labels[1]);
+        $this->assertNotContains('Variance', $labels[1]);
+        $this->assertContains('Cash on Hand', $labels[1]);
     }
 
     /** The per-day figures stay — they are the ones anyone acts on. */

@@ -5672,9 +5672,11 @@ select.rm-input {
 }
 
 @media (min-width: 700px) { .rh-pay-stats { grid-template-columns: repeat(4, 1fr); } }
-/* The Cash Report carries two stats, not four, so it must not inherit the 4-up desktop
+/* The Cash Report carries three stats, not four, so it must not inherit the 4-up desktop
    grid it would otherwise share with Payroll and the GCash Report. */
-@media (min-width: 700px) { .rh-cash-stats { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 700px) { .rh-cash-stats { grid-template-columns: repeat(3, 1fr); } }
+/* Three tiles into a 2-col mobile grid leaves a half-width orphan on the second row. */
+@media (max-width: 699px) { .rh-cash-stats > .rh-pay-stat:last-child { grid-column: 1 / -1; } }
 
 .rh-pay-stat {
     padding: 1.2rem 1.4rem 1.15rem;

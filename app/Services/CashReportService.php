@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\DayClosure;
 use App\Models\Expense;
 use App\Models\Sale;
+use App\Models\SpecialExpense;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -52,12 +53,18 @@ class CashReportService
      * @param  Collection<int, array<string, mixed>>  $rows
      * @return array<string, float|int>
      */
-    public function totals(Collection $rows): array
+    public function totals(Collection $rows, string $dateFrom, string $dateTo, ?int $branchId = null): array
     {
         $closed = $rows->where('closed', true);
+        $cashOverhead = $this->cashOverhead($dateFrom, $dateTo, $branchId);
 
         return [
-            'cash_on_hand' => round((float) $closed->sum('counted_cash'), 2),
+            // Net of overhead: monthly costs settled in cash genuinely left the
+            // business's cash, so a figure that ignored them would overstate what
+            // is actually held. The deduction is surfaced as its own figure below
+            // rather than silently shrinking this one.
+            'cash_on_hand' => round((float) $closed->sum('counted_cash') - $cashOverhead, 2),
+            'cash_overhead_total' => round($cashOverhead, 2),
             'expected_total' => round((float) $rows->sum('expected_cash'), 2),
             'variance_total' => round((float) $closed->sum('variance'), 2),
             'days_closed' => $closed->count(),
@@ -65,6 +72,40 @@ class CashReportService
             'cash_sales_total' => round((float) $rows->sum('cash_sales_total'), 2),
             'cash_expenses_total' => round((float) $rows->sum('cash_expenses_total'), 2),
         ];
+    }
+
+    /**
+     * Monthly overhead settled in cash within the range.
+     *
+     * Deliberately kept out of the per-day rows. A month's rent is not a cost of the
+     * day it happened to be handed over: charging it to that day's expected_cash would
+     * throw the drawer variance by the full rent amount and the closing cashier would
+     * wear it. On 2026-09-02 that would have turned a clean +₱278 into +₱16,278 against
+     * a drawer that only ever held ₱1,000. It belongs to the cash position over the
+     * range, not to any one reconciliation.
+     *
+     * Scoping mirrors the GCash wallet's treatment of the same table, so the two money
+     * positions cannot disagree about the same row:
+     *  - settlement-dated on COALESCE(paid_date, period_month), because this is a
+     *    position statement, not an accrual one;
+     *  - a company-wide row (branch_id null) belongs to no single branch, so it is
+     *    excluded from a single-branch view and deducted from the all-branches figure.
+     */
+    private function cashOverhead(string $dateFrom, string $dateTo, ?int $branchId): float
+    {
+        $query = SpecialExpense::query()->where('payment_method', 'cash');
+
+        if ($branchId !== null) {
+            $query->where('branch_id', $branchId);
+        }
+
+        // whereRaw, not whereDate: the comparison is on a COALESCE of two columns, and
+        // a plain string compare is correct on both drivers — MySQL compares DATEs, and
+        // SQLite's stored strings share the 'Y-m-d' prefix so they order correctly.
+        $query->whereRaw('COALESCE(paid_date, period_month) >= ?', [$dateFrom])
+            ->whereRaw('COALESCE(paid_date, period_month) <= ?', [$dateTo.' 23:59:59']);
+
+        return (float) $query->sum('amount');
     }
 
     /**
