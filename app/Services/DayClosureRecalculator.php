@@ -67,11 +67,24 @@ class DayClosureRecalculator
             return null;
         }
 
-        $closure = DayClosure::where('branch_id', $branchId)
-            ->whereDate('closed_at_date', $date)
-            ->first();
+        $closure = $this->closureFor($branchId, $date);
 
         return $closure ? $this->recalculate($closure) : null;
+    }
+
+    /**
+     * The closure covering this branch/date, if any. Null means the day is open.
+     */
+    public function closureFor(int $branchId, string|\DateTimeInterface|null $date): ?DayClosure
+    {
+        $date = $this->normaliseDate($date);
+        if ($date === null) {
+            return null;
+        }
+
+        return DayClosure::where('branch_id', $branchId)
+            ->whereDate('closed_at_date', $date)
+            ->first();
     }
 
     /**
