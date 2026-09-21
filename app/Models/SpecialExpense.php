@@ -27,6 +27,7 @@ class SpecialExpense extends Model
     protected $fillable = [
         'branch_id',
         'special_expense_category_id',
+        'payroll_entry_id',
         'recorded_by_user_id',
         'period_month',
         'paid_date',
@@ -57,6 +58,15 @@ class SpecialExpense extends Model
     public function recordedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by_user_id');
+    }
+
+    /**
+     * The payroll report this wage settles, when it came from Finalize. Null for
+     * every other overhead row, and for a wage whose report was later deleted.
+     */
+    public function payrollEntry(): BelongsTo
+    {
+        return $this->belongsTo(PayrollEntry::class);
     }
 
     /**

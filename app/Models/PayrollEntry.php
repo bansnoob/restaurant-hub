@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class PayrollEntry extends Model
 {
@@ -23,6 +24,14 @@ class PayrollEntry extends Model
         'status',
         'notes',
     ];
+
+    /**
+     * The overhead row posted when this report was finalized, if it has been.
+     */
+    public function specialExpense(): HasOne
+    {
+        return $this->hasOne(SpecialExpense::class);
+    }
 
     public function employee(): BelongsTo
     {
