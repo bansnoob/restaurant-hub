@@ -134,8 +134,11 @@ class AttendanceController extends Controller
             ->get()
             ->groupBy('employee_id');
 
+        // $rosterEmployees, not $employees: the tiles and the five roster sections are
+        // branch-scoped, and a Period Summary listing every employee in the company
+        // beside them made the two halves of one page disagree about who works where.
         $calculator = app(AttendanceSummaryCalculator::class);
-        $summaries = $employees->map(function (Employee $employee) use ($calculator, $recordsInRange, $rulesByBranch, $dateFrom, $dateTo): array {
+        $summaries = $rosterEmployees->map(function (Employee $employee) use ($calculator, $recordsInRange, $rulesByBranch, $dateFrom, $dateTo): array {
             $employeeRecords = $recordsInRange->get($employee->id, collect());
             $rule = $rulesByBranch->get($employee->branch_id);
             $ruleValues = $rule ? $rule->toArray() : [];

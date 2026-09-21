@@ -193,10 +193,19 @@ class PayrollController extends Controller
                 continue;
             }
 
-            DB::transaction(function () use ($employee, $validated, $calculator): void {
-                $this->generateForEmployee($employee, $validated['start_date'], $validated['end_date'], $calculator);
-            });
-            $generated++;
+            // generateForEmployee also throws for an already-finalized entry, and that
+            // throw used to escape the loop: employees already processed stayed committed
+            // in their own transactions while the page reported only the error, and anyone
+            // after the failure point was silently dropped from payroll.
+            try {
+                DB::transaction(function () use ($employee, $validated, $calculator): void {
+                    $this->generateForEmployee($employee, $validated['start_date'], $validated['end_date'], $calculator);
+                });
+                $generated++;
+            } catch (ValidationException $e) {
+                $reason = collect($e->errors())->flatten()->first() ?? 'could not be generated';
+                $skipped[] = trim($employee->first_name.' '.$employee->last_name).' ('.$reason.')';
+            }
         }
 
         $message = "Generated {$generated} payroll report".($generated === 1 ? '' : 's').'.';
