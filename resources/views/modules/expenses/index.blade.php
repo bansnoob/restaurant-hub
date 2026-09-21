@@ -37,6 +37,7 @@
             destroyUrlTemplate: @js(route('expenses.destroy', ['expense' => '__EXPENSE__'])),
             detailUrlTemplate: @js(route('expenses.show', ['expense' => '__EXPENSE__'])),
             csrfToken: @js(csrf_token()),
+            dayStatusUrl: @js(route('expenses.day-status')),
             initialDate: @js($filters['date_from']),
         })"
         @keydown.escape.window="closeAll()"
@@ -46,6 +47,9 @@
         @endif
         @if (session('error'))
             <div class="rm-toast rm-toast--err" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 4000)"><span>{{ session('error') }}</span></div>
+        @endif
+        @if (session('warning'))
+            <div class="rm-toast rm-toast--warn" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 6000)"><span>{{ session('warning') }}</span></div>
         @endif
         @if ($errors->any())
             <div class="rm-toast rm-toast--err" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 5000)"><span>{{ $errors->first() }}</span></div>
@@ -369,6 +373,15 @@
                                 <input type="date" name="expense_date" class="rm-input" x-model="form.expense_date" required>
                             </div>
                         </div>
+
+                        {{-- A closed day is a day someone counted and signed off. Saving onto
+                             it is still allowed — a forgotten receipt is a real correction, and
+                             the recalculator keeps the closure in step — but it must not happen
+                             without the person being told which day they are about to move. --}}
+                        <p class="rh-exp-closed-note" x-show="closedDay.closed" x-cloak>
+                            <strong x-text="closedDay.date"></strong> is already closed<template x-if="closedDay.countedCash !== null"><span> — counted ₱<span x-text="Number(closedDay.countedCash).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })"></span></span></template>.
+                            Saving will recalculate that day&rsquo;s cash figures.
+                        </p>
                         <div class="rm-field">
                             <label class="rm-field-label">Description</label>
                             <input type="text" name="description" class="rm-input" x-model="form.description" required maxlength="200">
@@ -469,7 +482,39 @@
                 updateUrlTemplate: config.updateUrlTemplate,
                 destroyUrlTemplate: config.destroyUrlTemplate,
                 detailUrlTemplate: config.detailUrlTemplate,
+                dayStatusUrl: config.dayStatusUrl,
                 csrfToken: config.csrfToken,
+                closedDay: { closed: false, date: null, countedCash: null },
+                init() {
+                    this.$watch('formOpen', () => this.refreshClosedDay());
+                    this.$watch('form.expense_date', () => this.refreshClosedDay());
+                    this.$watch('form.branch_id', () => this.refreshClosedDay());
+                },
+                clearClosedDay() {
+                    this.closedDay = { closed: false, date: null, countedCash: null };
+                },
+                async refreshClosedDay() {
+                    const branchId = this.form.branch_id;
+                    const date = this.form.expense_date;
+                    if (!this.formOpen || !branchId || !date) {
+                        this.clearClosedDay();
+                        return;
+                    }
+                    try {
+                        const url = `${this.dayStatusUrl}?branch_id=${encodeURIComponent(branchId)}&date=${encodeURIComponent(date)}`;
+                        const response = await fetch(url, { headers: { Accept: 'application/json' } });
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        const data = await response.json();
+                        this.closedDay = {
+                            closed: !! data.closed,
+                            date,
+                            countedCash: data.counted_cash ?? null,
+                        };
+                    } catch (error) {
+                        // Advisory only. A failed lookup must never stop someone recording an expense.
+                        this.clearClosedDay();
+                    }
+                },
                 detailOpen: false,
                 detail: {
                     id: null,

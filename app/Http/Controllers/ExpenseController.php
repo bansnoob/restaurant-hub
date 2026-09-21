@@ -133,6 +133,28 @@ class ExpenseController extends Controller
         ]);
     }
 
+    /**
+     * Whether this branch/date is already closed, so the form can say so before the
+     * person saves. The write itself is never blocked — a forgotten receipt is a real
+     * correction — but it stops being silent.
+     */
+    public function dayStatus(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'date' => ['required', 'date_format:Y-m-d'],
+        ]);
+
+        $closure = $this->recalculator->closureFor((int) $validated['branch_id'], $validated['date']);
+
+        return response()->json([
+            'closed' => $closure !== null,
+            'closed_at' => $closure?->closed_at?->toIso8601String(),
+            'counted_cash' => $closure ? (float) $closure->counted_cash : null,
+            'variance' => $closure ? (float) $closure->variance : null,
+        ]);
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
@@ -185,7 +207,10 @@ class ExpenseController extends Controller
         // No-op when the day is not closed.
         $this->recalculator->recalculateFor((int) $expense->branch_id, $expense->expense_date);
 
-        return back()->with('success', 'Expense recorded successfully.');
+        return $this->withClosedDayWarning(
+            back()->with('success', 'Expense recorded successfully.'),
+            [[(int) $expense->branch_id, $expense->expense_date]]
+        );
     }
 
     public function update(Request $request, Expense $expense): RedirectResponse
@@ -245,7 +270,13 @@ class ExpenseController extends Controller
             $expense->expense_date
         );
 
-        return back()->with('success', 'Expense updated successfully.');
+        return $this->withClosedDayWarning(
+            back()->with('success', 'Expense updated successfully.'),
+            [
+                [$originalBranchId, $originalDate],
+                [(int) $expense->branch_id, $expense->expense_date],
+            ]
+        );
     }
 
     public function destroy(Expense $expense): RedirectResponse
@@ -261,7 +292,40 @@ class ExpenseController extends Controller
 
         $this->recalculator->recalculateFor($branchId, $date);
 
-        return back()->with('success', 'Expense deleted successfully.');
+        return $this->withClosedDayWarning(
+            back()->with('success', 'Expense deleted successfully.'),
+            [[$branchId, $date]]
+        );
+    }
+
+    /**
+     * Attach a notice naming any day this write changed that had already been closed.
+     * Nothing is blocked; the closure is recomputed either way. The point is that a day
+     * someone counted and signed off never changes without them being told.
+     *
+     * @param  array<int, array{0: int, 1: string|\DateTimeInterface|null}>  $days
+     */
+    private function withClosedDayWarning(RedirectResponse $response, array $days): RedirectResponse
+    {
+        $dates = [];
+        foreach ($days as [$branchId, $date]) {
+            $closure = $this->recalculator->closureFor($branchId, $date);
+            if ($closure) {
+                $dates[] = $closure->closed_at_date->format('Y-m-d');
+            }
+        }
+
+        $dates = array_values(array_unique($dates));
+        if ($dates === []) {
+            return $response;
+        }
+
+        sort($dates);
+        $message = count($dates) === 1
+            ? $dates[0].' was already closed. Its cash figures have been recalculated.'
+            : implode(' and ', $dates).' were already closed. Their cash figures have been recalculated.';
+
+        return $response->with('warning', $message);
     }
 
     /**
