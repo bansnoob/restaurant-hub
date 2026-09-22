@@ -48,14 +48,20 @@ class PayrollController extends Controller
             $reportsQuery->whereHas('payrollPeriod', fn ($q) => $q->where('branch_id', (int) $branchFilter));
         }
         if (in_array($statusFilter, ['draft', 'paid'], true)) {
-            $reportsQuery->where('status', $statusFilter);
+            // payroll_periods carries a `status` column too, so an unqualified
+            // name here is ambiguous once the join is on and the query is refused.
+            $reportsQuery->where('payroll_entries.status', $statusFilter);
         }
         if ($search !== '') {
             $needle = '%'.$search.'%';
+            // The name alternatives must be grouped: appended flat they would also
+            // OR away the correlation whereHas puts on the subquery, matching every row.
             $reportsQuery->whereHas('employee', function ($q) use ($needle) {
-                $q->where('first_name', 'like', $needle)
-                  ->orWhere('last_name', 'like', $needle)
-                  ->orWhere('employee_code', 'like', $needle);
+                $q->where(function ($nameMatch) use ($needle) {
+                    $nameMatch->where('first_name', 'like', $needle)
+                        ->orWhere('last_name', 'like', $needle)
+                        ->orWhere('employee_code', 'like', $needle);
+                });
             });
         }
 
