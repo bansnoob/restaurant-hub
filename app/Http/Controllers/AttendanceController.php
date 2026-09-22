@@ -134,8 +134,11 @@ class AttendanceController extends Controller
             ->get()
             ->groupBy('employee_id');
 
+        // $rosterEmployees, not $employees: the tiles and the five roster sections are
+        // branch-scoped, and a Period Summary listing every employee in the company
+        // beside them made the two halves of one page disagree about who works where.
         $calculator = app(AttendanceSummaryCalculator::class);
-        $summaries = $employees->map(function (Employee $employee) use ($calculator, $recordsInRange, $rulesByBranch, $dateFrom, $dateTo): array {
+        $summaries = $rosterEmployees->map(function (Employee $employee) use ($calculator, $recordsInRange, $rulesByBranch, $dateFrom, $dateTo): array {
             $employeeRecords = $recordsInRange->get($employee->id, collect());
             $rule = $rulesByBranch->get($employee->branch_id);
             $ruleValues = $rule ? $rule->toArray() : [];
@@ -215,21 +218,24 @@ class AttendanceController extends Controller
 
         $employee = Employee::findOrFail($validated['employee_id']);
         $clockInAt = Carbon::parse($validated['work_date'].' '.$validated['clock_in_time']);
-        $clockOutAt = null;
-
-        if (! empty($validated['clock_out_time'])) {
-            $clockOutAt = Carbon::parse($validated['work_date'].' '.$validated['clock_out_time']);
-            if ($clockOutAt->lessThanOrEqualTo($clockInAt)) {
-                throw ValidationException::withMessages([
-                    'clock_out_time' => 'Clock out time must be later than clock in time.',
-                ]);
-            }
-        }
 
         $record = AttendanceRecord::firstOrNew([
             'employee_id' => $employee->id,
             'work_date' => $validated['work_date'],
         ]);
+
+        // Clock out is optional on this form, and a blank optional field means
+        // "leave it alone", not "erase it". Nulling it dropped the day out of the
+        // summary entirely — a full daily rate gone from a correction to the time in.
+        $clockOutAt = ! empty($validated['clock_out_time'])
+            ? Carbon::parse($validated['work_date'].' '.$validated['clock_out_time'])
+            : $record->clock_out_at;
+
+        if ($clockOutAt && $clockOutAt->lessThanOrEqualTo($clockInAt)) {
+            throw ValidationException::withMessages([
+                'clock_out_time' => 'Clock out time must be later than clock in time.',
+            ]);
+        }
 
         $record->branch_id = $employee->branch_id;
         $record->clock_in_at = $clockInAt;
@@ -238,6 +244,8 @@ class AttendanceController extends Controller
         $record->notes = $validated['notes'] ?? $record->notes;
         $record->captured_by_user_id = $request->user()->id;
         $record->save();
+
+        $this->syncDraftPayrollEntriesForEmployeeDate($employee, $validated['work_date']);
 
         return back()->with('success', 'Manual attendance entry saved.');
     }
@@ -279,6 +287,11 @@ class AttendanceController extends Controller
         $record->captured_by_user_id = $request->user()->id;
         $record->save();
 
+        $employee = Employee::find($record->employee_id);
+        if ($employee) {
+            $this->syncDraftPayrollEntriesForEmployeeDate($employee, $workDate);
+        }
+
         return back()->with('success', 'Attendance time updated.');
     }
 
@@ -295,7 +308,7 @@ class AttendanceController extends Controller
             }
         });
 
-        return back()->with('success', 'Daily attendance record deleted and related draft payroll entries updated.');
+        return back()->with('success', 'Daily attendance record deleted and related draft payroll reports updated.');
     }
 
     private function syncDraftPayrollEntriesForEmployeeDate(Employee $employee, string $workDate): void
@@ -336,7 +349,16 @@ class AttendanceController extends Controller
             $existingEntry = PayrollEntry::where('payroll_period_id', $period->id)
                 ->where('employee_id', $employee->id)
                 ->first();
-            if ($existingEntry && $existingEntry->status === 'paid') {
+
+            // Refresh a report the owner generated; never bring one into being.
+            //
+            // Overlapping periods are legal — the unique key is
+            // (branch_id, start_date, end_date), so a weekly period nests inside a
+            // semi-monthly one and both match this date. updateOrCreate therefore
+            // INSERTED a payable row into every period the employee had no entry in,
+            // covering days they had already been paid for, with nothing in the UI to
+            // distinguish it from a report someone asked for.
+            if (! $existingEntry || $existingEntry->status === 'paid') {
                 continue;
             }
 
@@ -361,23 +383,17 @@ class AttendanceController extends Controller
             $deductions = (float) $summary['estimated_deductions'];
             $netPay = max(0, $grossPay - $deductions);
 
-            PayrollEntry::updateOrCreate(
-                [
-                    'payroll_period_id' => $period->id,
-                    'employee_id' => $employee->id,
-                ],
-                [
-                    'regular_hours' => round($regularHours, 2),
-                    'overtime_hours' => round($overtimeHours, 2),
-                    'hourly_rate' => $hourlyRate,
-                    'daily_rate' => round($dailyRate, 2),
-                    'gross_pay' => round($grossPay, 2),
-                    'deductions' => $deductions,
-                    'net_pay' => round($netPay, 2),
-                    'status' => 'draft',
-                    'notes' => 'Auto-updated after attendance record deletion.',
-                ]
-            );
+            $existingEntry->update([
+                'regular_hours' => round($regularHours, 2),
+                'overtime_hours' => round($overtimeHours, 2),
+                'hourly_rate' => $hourlyRate,
+                'daily_rate' => round($dailyRate, 2),
+                'gross_pay' => round($grossPay, 2),
+                'deductions' => $deductions,
+                'net_pay' => round($netPay, 2),
+                'status' => 'draft',
+                'notes' => 'Auto-updated from attendance on '.$workDate.'.',
+            ]);
         }
     }
 }

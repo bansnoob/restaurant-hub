@@ -10,6 +10,8 @@ use App\Models\Employee;
 use App\Models\PayrollEntry;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollRule;
+use App\Models\SpecialExpense;
+use App\Models\SpecialExpenseCategory;
 use App\Services\AttendanceSummaryCalculator;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\RedirectResponse;
@@ -17,11 +19,18 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class PayrollController extends Controller
 {
+    /**
+     * Where finalized wages are filed. Created on first use rather than seeded, so
+     * an install that already has an owner-made "Weekly Salary" reuses it.
+     */
+    private const SALARY_CATEGORY_SLUG = 'weekly-salary';
+
     public function index(Request $request): View
     {
         $branches = Branch::where('is_active', true)->orderBy('name')->get();
@@ -199,10 +208,19 @@ class PayrollController extends Controller
                 continue;
             }
 
-            DB::transaction(function () use ($employee, $validated, $calculator): void {
-                $this->generateForEmployee($employee, $validated['start_date'], $validated['end_date'], $calculator);
-            });
-            $generated++;
+            // generateForEmployee also throws for an already-finalized entry, and that
+            // throw used to escape the loop: employees already processed stayed committed
+            // in their own transactions while the page reported only the error, and anyone
+            // after the failure point was silently dropped from payroll.
+            try {
+                DB::transaction(function () use ($employee, $validated, $calculator): void {
+                    $this->generateForEmployee($employee, $validated['start_date'], $validated['end_date'], $calculator);
+                });
+                $generated++;
+            } catch (ValidationException $e) {
+                $reason = collect($e->errors())->flatten()->first() ?? 'could not be generated';
+                $skipped[] = trim($employee->first_name.' '.$employee->last_name).' ('.$reason.')';
+            }
         }
 
         $message = "Generated {$generated} payroll report".($generated === 1 ? '' : 's').'.';
@@ -259,21 +277,78 @@ class PayrollController extends Controller
     {
         $validated = $request->validate([
             'payroll_entry_id' => ['required', 'integer', 'exists:payroll_entries,id'],
+            'payment_method' => ['nullable', Rule::in(SpecialExpense::PAYMENT_METHODS)],
         ]);
 
-        $entry = PayrollEntry::with('payrollPeriod')->findOrFail($validated['payroll_entry_id']);
+        $entry = PayrollEntry::with(['payrollPeriod', 'employee', 'specialExpense'])
+            ->findOrFail($validated['payroll_entry_id']);
+
         if ($entry->status === 'paid') {
             return back()->with('error', 'Payroll report is already finalized.');
         }
 
-        $entry->update(['status' => 'paid']);
+        // Marking the report paid and recording the money that paid it are one act.
+        // Splitting them is what left wages sitting as open drafts while the cash was
+        // written down by hand somewhere else, the same wage twice at two amounts.
+        DB::transaction(function () use ($entry, $validated): void {
+            $entry->update(['status' => 'paid']);
 
-        $period = $entry->payrollPeriod;
-        if ($period) {
-            $period->update(['processed_at' => now()]);
+            $period = $entry->payrollPeriod;
+            if ($period) {
+                $period->update(['processed_at' => now()]);
+            }
+
+            $this->postWageToOverhead($entry, $validated['payment_method'] ?? 'cash');
+        });
+
+        return back()->with('success', 'Payroll report finalized, locked and posted to overhead.');
+    }
+
+    /**
+     * Record the settled wage in `special_expenses`.
+     *
+     * Deliberately not `expenses`: daily expenses feed the drawer reconciliation and
+     * the day closure, so a month of wages landing there reports a cash shortage no
+     * cashier caused. Overhead is the ledger salary money already goes through.
+     *
+     * Dated to the month the pay period ENDS in — the month the wage belongs to —
+     * while paid_date carries the day it was actually settled.
+     */
+    private function postWageToOverhead(PayrollEntry $entry, string $paymentMethod): void
+    {
+        if ($entry->specialExpense) {
+            return;
         }
 
-        return back()->with('success', 'Payroll report finalized and locked.');
+        $period = $entry->payrollPeriod;
+        $employee = $entry->employee;
+
+        $category = SpecialExpenseCategory::firstOrCreate(
+            ['slug' => self::SALARY_CATEGORY_SLUG],
+            ['name' => 'Weekly Salary', 'is_active' => true]
+        );
+
+        $employeeName = $employee
+            ? trim($employee->first_name.' '.$employee->last_name)
+            : 'Employee #'.$entry->employee_id;
+        $periodLabel = $period
+            ? Carbon::parse($period->start_date)->format('M j').' – '.Carbon::parse($period->end_date)->format('M j, Y')
+            : 'unknown period';
+
+        SpecialExpense::create([
+            'branch_id' => $period?->branch_id ?? $employee?->branch_id,
+            'special_expense_category_id' => $category->id,
+            'payroll_entry_id' => $entry->id,
+            'recorded_by_user_id' => request()->user()?->id,
+            'period_month' => ($period
+                ? Carbon::parse($period->end_date)
+                : Carbon::now())->startOfMonth()->toDateString(),
+            'paid_date' => Carbon::now()->toDateString(),
+            'description' => $employeeName.' ('.$periodLabel.')',
+            'amount' => round((float) $entry->net_pay, 2),
+            'payment_method' => $paymentMethod,
+            'notes' => 'Posted automatically when payroll report #'.$entry->id.' was finalized.',
+        ]);
     }
 
     public function destroy(PayrollPeriod $payrollPeriod): RedirectResponse
