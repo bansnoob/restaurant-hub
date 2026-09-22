@@ -11,7 +11,9 @@ use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\Sale;
 use App\Services\CashReportService;
+use App\Models\SpecialExpense;
 use App\Services\DayClosureRecalculator;
+use App\Services\SpecialExpenseOptions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -169,7 +171,7 @@ class DayClosureController extends Controller
         return back()->with('success', $message);
     }
 
-    public function index(Request $request, CashReportService $cashReport): View
+    public function index(Request $request, CashReportService $cashReport, SpecialExpenseOptions $options): View
     {
         $branchFilter = $request->query('branch_id');
         $dateFrom = $request->string('date_from')->toString() ?: now()->subDays(29)->toDateString();
@@ -193,7 +195,15 @@ class DayClosureController extends Controller
             ['path' => $request->url(), 'query' => $request->query()]
         );
 
-        return view('modules.day_closures.index', [
+        // Owner-only. The Cash Report is role:owner|cashier, and these rows carry wages and
+        // supplier terms — the very reason wages were moved out of `expenses`, which a
+        // cashier can read through the mobile API. Gated in the controller as well as the
+        // view so a cashier's response never contains the data at all.
+        $special = $request->user()?->hasRole('owner')
+            ? $this->specialExpensesFor($options, $dateFrom, $dateTo, $branchId)
+            : null;
+
+        return view('modules.day_closures.index', array_merge([
             'branches' => $branches,
             'closures' => $closures,
             'totals' => $totals,
@@ -202,7 +212,38 @@ class DayClosureController extends Controller
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
             ],
-        ]);
+            'special' => $special,
+        ], $special['form'] ?? []));
+    }
+
+    /**
+     * The special expenses whose money moved inside the report's range.
+     *
+     * Dated on COALESCE(paid_date, period_month) — the same settlement-date basis the
+     * "Paid Outside Drawer" figure uses, so the list and the tile can never disagree about
+     * which rows belong to the range.
+     *
+     * @return array<string, mixed>
+     */
+    private function specialExpensesFor(SpecialExpenseOptions $options, string $dateFrom, string $dateTo, ?int $branchId): array
+    {
+        $scope = SpecialExpense::query()
+            ->whereRaw('COALESCE(paid_date, period_month) >= ?', [$dateFrom])
+            ->whereRaw('COALESCE(paid_date, period_month) <= ?', [$dateTo.' 23:59:59'])
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
+
+        $rows = $options
+            ->orderByPaidDate((clone $scope)->with(['branch:id,name', 'category:id,name']))
+            ->get();
+
+        return [
+            'rows' => $rows,
+            'total' => round((float) $rows->sum('amount'), 2),
+            // Only the cash ones reach Paid Outside Drawer; the rest settled elsewhere.
+            // Stated explicitly so the section reconciles against the tile above it.
+            'cash_total' => round((float) $rows->where('payment_method', 'cash')->sum('amount'), 2),
+            'form' => $options->forVisible(clone $scope, Carbon::parse($dateTo)->startOfMonth()->toDateString()),
+        ];
     }
 
     /**

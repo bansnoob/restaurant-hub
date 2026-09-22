@@ -178,6 +178,108 @@
             </div>
             <div class="rh-pay-pagination">{{ $closures->links() }}</div>
         @endif
+        {{-- Special expenses. Owner-only: this page is role:owner|cashier and these rows carry
+             wages and supplier terms. The controller sends $special = null to a cashier, so
+             the markup below never renders and the data never reaches the response. --}}
+        @if ($special)
+            <div x-data="specialExpensesPage({
+                    updateUrlTemplate: @js(route('special-expenses.update', ['specialExpense' => '__SPECIAL__'])),
+                    destroyUrlTemplate: @js(route('special-expenses.destroy', ['specialExpense' => '__SPECIAL__'])),
+                    csrfToken: @js(csrf_token()),
+                    currentMonth: @js(\Carbon\Carbon::parse($filters['date_to'])->startOfMonth()->toDateString()),
+                 })"
+                 @keydown.escape.window="closeAll()">
+
+                <div class="rh-cash-special-head">
+                    <h2 class="rh-pay-section-title" style="margin-bottom:0;">Special Expenses</h2>
+                    <div class="rh-cash-special-actions">
+                        <a href="{{ route('special-expenses.index') }}" class="rh-cash-row-action rh-cash-row-action--edit">Monthly view</a>
+                        <button type="button" class="rh-cash-row-action rh-cash-row-action--close" @click="openCreate()">+ Add</button>
+                    </div>
+                </div>
+
+                @if ($special['rows']->isEmpty())
+                    <div class="rh-pay-list">
+                        <div class="rh-pay-empty">
+                            <p class="rh-pay-empty-title">No special expenses in this range</p>
+                            <p style="font-size: 0.82rem;">Rent, wages and stock paid outside the drawer appear here.</p>
+                        </div>
+                    </div>
+                @else
+                    <div style="overflow-x: auto;">
+                        <table class="rh-cash-table">
+                            <thead>
+                                <tr>
+                                    <th>Paid</th>
+                                    <th>Category</th>
+                                    <th>Description</th>
+                                    <th>Branch</th>
+                                    <th class="num">Amount</th>
+                                    <th class="center">Method</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($special['rows'] as $row)
+                                    @php
+                                        $paid = $row->paid_date ?? $row->period_month;
+                                        $detailPayload = [
+                                            'id' => $row->id,
+                                            'branch_id' => $row->branch_id,
+                                            'special_expense_category_id' => $row->special_expense_category_id,
+                                            'period_month' => $row->period_month?->toDateString(),
+                                            'period_month_label' => $row->period_month?->format('F Y'),
+                                            'paid_date' => $row->paid_date?->toDateString(),
+                                            'paid_date_label' => $row->paid_date?->format('M j, Y'),
+                                            'description' => $row->description,
+                                            'vendor_name' => $row->vendor_name,
+                                            'reference_no' => $row->reference_no,
+                                            'amount' => (float) $row->amount,
+                                            'payment_method' => $row->payment_method,
+                                            'notes' => $row->notes,
+                                            'branch_name' => $row->branch?->name,
+                                            'category_name' => $row->category?->name,
+                                        ];
+                                    @endphp
+                                    <tr style="cursor:pointer;" @click="openDetail(@js($detailPayload))">
+                                        <td>
+                                            <strong>{{ $paid?->format('M j') }}</strong>
+                                            <span style="display:block; font-family: var(--rh-font-mono); font-size:0.6rem; color: var(--rh-text-muted); margin-top:0.15rem;">{{ $paid?->format('Y') }}</span>
+                                        </td>
+                                        <td>{{ $row->category?->name ?? '—' }}</td>
+                                        <td style="color: var(--rh-text-muted);">{{ $row->description ?: '—' }}</td>
+                                        <td>{{ $row->branch?->name ?? 'All branches' }}</td>
+                                        <td class="num num--warn">₱{{ number_format((float) $row->amount, 2) }}</td>
+                                        <td class="center">
+                                            <span class="rh-cash-variance-pill {{ $row->payment_method === 'cash' ? 'rh-cash-variance-pill--open' : 'rh-cash-variance-pill--match' }}">
+                                                {{ ['cash' => 'Cash', 'gcash' => 'GCash', 'bank_transfer' => 'Bank', 'other' => 'Other'][$row->payment_method] ?? $row->payment_method }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="4" style="text-align:right; color: var(--rh-text-muted);">
+                                        Total in range
+                                        {{-- Only the cash rows reach Paid Outside Drawer above; the rest settled
+                                             by bank or GCash and never touched the business's cash. --}}
+                                        @if ($special['cash_total'] !== $special['total'])
+                                            <span style="font-size:0.75rem;">· of which cash ₱{{ number_format($special['cash_total'], 2) }}</span>
+                                        @endif
+                                    </td>
+                                    <td class="num"><strong>₱{{ number_format($special['total'], 2) }}</strong></td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                @endif
+
+                @include('modules.expenses.partials.special-drawers')
+                @include('modules.expenses.partials.special-script')
+            </div>
+        @endif
+
         {{-- Edit Day drawer --}}
         <template x-if="editOpen">
             <div class="rm-overlay" @click.self="closeEdit()">
