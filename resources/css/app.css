@@ -2561,6 +2561,23 @@ html.light-mode {
     gap: 1.25rem;
 }
 
+.rh-cash-special-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 2rem 0 0.75rem;
+}
+
+.rh-cash-special-actions { display: flex; gap: 0.5rem; }
+
+.rh-cash-table tfoot td {
+    padding: 0.85rem 1.2rem;
+    border-top: 1px solid var(--rh-border);
+    font-family: var(--rh-font-mono);
+    font-size: 0.72rem;
+}
+
 .rm-drawer-foot {
     display: flex;
     align-items: center;

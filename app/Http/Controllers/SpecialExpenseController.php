@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Branch;
 use App\Models\SpecialExpense;
 use App\Models\SpecialExpenseCategory;
+use App\Services\SpecialExpenseOptions;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -32,9 +33,7 @@ class SpecialExpenseController extends Controller
     private const PAYMENT_METHODS = SpecialExpense::PAYMENT_METHODS;
 
     /** How many months back the month picker offers. */
-    private const MONTH_OPTIONS = 18;
-
-    public function index(Request $request): View
+    public function index(Request $request, SpecialExpenseOptions $options): View
     {
         $month = $this->resolveMonth($request);
         $monthStart = Carbon::parse($month)->startOfMonth();
@@ -54,10 +53,8 @@ class SpecialExpenseController extends Controller
             $listQuery->where('special_expense_category_id', (int) $categoryFilter);
         }
 
-        $specialExpenses = (clone $listQuery)
-            ->with(['branch:id,name', 'category:id,name'])
-            ->orderByDesc('period_month')
-            ->orderByDesc('id')
+        $specialExpenses = $options
+            ->orderByPaidDate((clone $listQuery)->with(['branch:id,name', 'category:id,name']))
             ->paginate(20)
             ->withQueryString();
 
@@ -80,24 +77,12 @@ class SpecialExpenseController extends Controller
         ];
 
         $categoryBreakdown = $this->categoryBreakdown(clone $base);
-        $monthOptions = $this->monthOptions($monthStart->toDateString());
 
-        // Include any branch/category a listed row still points at, even if it
-        // has since been deactivated. Otherwise the edit drawer offers no option
-        // matching the row's value, the browser selects the first option instead
-        // ('All branches' / 'No category'), and saving an unrelated field
-        // silently reassigns the cost.
-        $usedBranchIds = SpecialExpense::query()->forMonth($monthStart)
-            ->whereNotNull('branch_id')->distinct()->pluck('branch_id');
-        $usedCategoryIds = SpecialExpense::query()->forMonth($monthStart)
-            ->whereNotNull('special_expense_category_id')->distinct()->pluck('special_expense_category_id');
-
-        $branches = Branch::where('is_active', true)
-            ->orWhereIn('id', $usedBranchIds)
-            ->orderBy('name')->get();
-        $categories = SpecialExpenseCategory::where('is_active', true)
-            ->orWhereIn('id', $usedCategoryIds)
-            ->orderBy('name')->get();
+        [
+            'branches' => $branches,
+            'categories' => $categories,
+            'monthOptions' => $monthOptions,
+        ] = $options->forVisible(SpecialExpense::query()->forMonth($monthStart), $monthStart->toDateString());
 
         $filters = [
             'month' => $monthStart->toDateString(),
@@ -292,43 +277,6 @@ class SpecialExpenseController extends Controller
      * The same trap is documented on the daily expenses form.
      *
      * @return array<int, array{value: string, label: string}>
-     */
-    private function monthOptions(string $selected): array
-    {
-        $newest = now()->startOfMonth();
-        $oldest = $newest->copy()->subMonths(self::MONTH_OPTIONS - 1);
-
-        $earliestData = SpecialExpense::min('period_month');
-        if ($earliestData) {
-            $earliest = Carbon::parse($earliestData)->startOfMonth();
-            if ($earliest->lt($oldest)) {
-                $oldest = $earliest;
-            }
-        }
-
-        $selectedStart = Carbon::parse($selected)->startOfMonth();
-        if ($selectedStart->lt($oldest)) {
-            $oldest = $selectedStart;
-        }
-        if ($selectedStart->gt($newest)) {
-            $newest = $selectedStart;
-        }
-
-        $options = [];
-        $cursor = $newest->copy();
-        while ($cursor->gte($oldest)) {
-            $options[] = [
-                'value' => $cursor->toDateString(),
-                'label' => $cursor->format('F Y'),
-            ];
-            $cursor = $cursor->copy()->subMonth();
-        }
-
-        return $options;
-    }
-
-    /**
-     * @return array<int, array{name: string, count: int, total: float}>
      */
     private function categoryBreakdown($query): array
     {
