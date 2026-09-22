@@ -9,13 +9,19 @@ use App\Http\Resources\V1\ExpenseCategoryResource;
 use App\Http\Resources\V1\ExpenseResource;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
+use App\Services\DayClosureRecalculator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class ExpenseController extends Controller
 {
+    public function __construct(
+        private readonly DayClosureRecalculator $recalculator,
+    ) {}
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $branchId = $this->resolveBranchId($request);
@@ -42,6 +48,7 @@ class ExpenseController extends Controller
             'description' => ['required', 'string', 'max:200'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'payment_method' => ['required', 'in:cash,bank_transfer,gcash,other'],
+            'paid_from' => ['nullable', Rule::in(Expense::PAID_FROM)],
             'notes' => ['nullable', 'string', 'max:2000'],
             'new_category_name' => ['nullable', 'string', 'max:100'],
         ]);
@@ -72,11 +79,22 @@ class ExpenseController extends Controller
             'description' => $validated['description'],
             'amount' => $validated['amount'],
             'payment_method' => $validated['payment_method'],
+            'paid_from' => $this->resolvePaidFrom(
+                $validated['payment_method'],
+                $validated['paid_from'] ?? null
+            ),
             'status' => 'approved',
             'notes' => $validated['notes'] ?? null,
         ]);
 
+        // A closed day's figures are derived from these rows, so they have to follow.
+        // No-op when the day is not closed.
+        $this->recalculator->recalculateFor((int) $expense->branch_id, $expense->expense_date);
+
         return (new ExpenseResource($expense->load('category')))
+            ->additional(['meta' => [
+                'day_closed' => $this->dayIsClosed((int) $expense->branch_id, $expense->expense_date),
+            ]])
             ->response()
             ->setStatusCode(201);
     }
@@ -98,12 +116,38 @@ class ExpenseController extends Controller
             'description' => ['sometimes', 'required', 'string', 'max:200'],
             'amount' => ['sometimes', 'required', 'numeric', 'min:0.01'],
             'payment_method' => ['sometimes', 'required', 'in:cash,bank_transfer,gcash,other'],
+            'paid_from' => ['sometimes', 'nullable', Rule::in(Expense::PAID_FROM)],
             'notes' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ]);
 
+        $originalBranchId = (int) $expense->branch_id;
+        $originalDate = $expense->expense_date;
+
+        // Resolved against the merged state rather than the request alone, so a client
+        // that sends only one half of the pair still lands on a coherent one.
+        if (array_key_exists('paid_from', $validated) || array_key_exists('payment_method', $validated)) {
+            $validated['paid_from'] = $this->resolvePaidFrom(
+                $validated['payment_method'] ?? $expense->payment_method,
+                $validated['paid_from'] ?? null,
+                $expense->paid_from
+            );
+        }
+
         $expense->update($validated);
 
+        // Both ends: an expense moved off a day leaves that day overstated, and the day
+        // it landed on understated. Recomputing only the destination fixes half of it.
+        $this->recalculator->recalculateForMove(
+            $originalBranchId,
+            $originalDate,
+            (int) $expense->branch_id,
+            $expense->expense_date
+        );
+
         return (new ExpenseResource($expense->load('category')))
+            ->additional(['meta' => [
+                'day_closed' => $this->dayIsClosed((int) $expense->branch_id, $expense->expense_date),
+            ]])
             ->response()
             ->setStatusCode(200);
     }
@@ -114,9 +158,17 @@ class ExpenseController extends Controller
 
         abort_if($expense->status === 'voided', 422, 'Voided expenses cannot be deleted.');
 
+        $branchId = (int) $expense->branch_id;
+        $date = $expense->expense_date;
+
         $expense->delete();
 
-        return response()->json(['message' => 'Expense deleted.']);
+        $this->recalculator->recalculateFor($branchId, $date);
+
+        return response()->json([
+            'message' => 'Expense deleted.',
+            'meta' => ['day_closed' => $this->dayIsClosed($branchId, $date)],
+        ]);
     }
 
     public function categories(Request $request): AnonymousResourceCollection
@@ -131,6 +183,28 @@ class ExpenseController extends Controller
             ->get();
 
         return ExpenseCategoryResource::collection($categories);
+    }
+
+    /**
+     * Non-cash has no drawer to come from, so it is never 'outside'.
+     */
+    private function resolvePaidFrom(string $paymentMethod, ?string $requested, ?string $current = null): string
+    {
+        if ($paymentMethod !== 'cash') {
+            return 'drawer';
+        }
+
+        return $requested ?? $current ?? 'drawer';
+    }
+
+    /**
+     * Whether this branch/date is already closed. The write still goes through — a
+     * forgotten expense is a legitimate correction and the closure is recomputed to
+     * match — but the caller is told, because it changes a day someone already signed off.
+     */
+    private function dayIsClosed(int $branchId, string|\DateTimeInterface|null $date): bool
+    {
+        return $this->recalculator->closureFor($branchId, $date) !== null;
     }
 
     /**

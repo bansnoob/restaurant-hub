@@ -179,6 +179,12 @@ Route::middleware('auth')->group(function () {
         ->whereNumber('id')
         ->name('gcash-report.entries.status');
 
+    // Asked by the expense form before it lets you save onto a day that is already
+    // signed off. Must stay above /expenses/{expense}/details.
+    Route::get('/expenses/day-status', [ExpenseController::class, 'dayStatus'])
+        ->middleware('role:owner')
+        ->name('expenses.day-status');
+
     Route::get('/expenses', [ExpenseController::class, 'index'])
         ->middleware('role:owner')
         ->name('expenses.index');

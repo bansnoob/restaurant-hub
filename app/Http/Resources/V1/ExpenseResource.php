@@ -23,6 +23,7 @@ class ExpenseResource extends JsonResource
             'description' => $this->description,
             'amount' => (float) $this->amount,
             'payment_method' => $this->payment_method,
+            'paid_from' => $this->paid_from,
             'status' => $this->status,
             'notes' => $this->notes,
             'category' => new ExpenseCategoryResource($this->whenLoaded('category')),
