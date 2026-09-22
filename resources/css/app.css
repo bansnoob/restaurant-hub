@@ -8117,6 +8117,11 @@ select.rm-input {
 .rh-cash-row-action[disabled] { opacity: 0.5; cursor: default; }
 
 /* Expense rows inside the Edit Day drawer. */
+.rh-cash-edit-sub {
+    margin-top: 0.3rem;
+    font-size: 0.78rem;
+}
+
 .rh-cash-edit-table { width: 100%; border-collapse: collapse; }
 .rh-cash-edit-table td { padding: 0.25rem 0.25rem 0.25rem 0; vertical-align: middle; }
 .rh-cash-edit-table td:first-child { padding-left: 0; }
