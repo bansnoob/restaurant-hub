@@ -2141,6 +2141,12 @@ html.light-mode {
     color: var(--rh-error-text);
 }
 
+.rm-toast--warn {
+    background: var(--rh-amber-bg);
+    border: 1px solid var(--rh-amber-border);
+    color: var(--rh-amber-text);
+}
+
 .rm-toast-icon { width: 18px; height: 18px; flex-shrink: 0; }
 
 /* ── Top bar ── */
@@ -5135,6 +5141,17 @@ select.rm-input {
 .rh-exp-stat-value--accent  { color: var(--rh-accent); }
 .rh-exp-stat-value--success { color: var(--rh-success-text); }
 .rh-exp-stat-value--warn    { color: var(--rh-amber-text); }
+
+.rh-exp-closed-note {
+    margin: 0 0 0.9rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--rh-amber-border);
+    border-radius: 8px;
+    background: var(--rh-amber-bg);
+    color: var(--rh-amber-text);
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
 
 /* Daily chart panel */
 .rh-exp-chart {
@@ -8134,6 +8151,11 @@ select.rm-input {
 .rh-cash-row-action[disabled] { opacity: 0.5; cursor: default; }
 
 /* Expense rows inside the Edit Day drawer. */
+.rh-cash-edit-sub {
+    margin-top: 0.3rem;
+    font-size: 0.78rem;
+}
+
 .rh-cash-edit-table { width: 100%; border-collapse: collapse; }
 .rh-cash-edit-table td { padding: 0.25rem 0.25rem 0.25rem 0; vertical-align: middle; }
 .rh-cash-edit-table td:first-child { padding-left: 0; }

@@ -8,6 +8,7 @@ use App\Models\AttendanceRecord;
 use App\Models\Branch;
 use App\Models\DayClosure;
 use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\Sale;
 use App\Services\CashReportService;
 use App\Models\SpecialExpense;
@@ -263,7 +264,16 @@ class DayClosureController extends Controller
             ->where('payment_method', 'cash')
             ->whereDate('expense_date', $date)
             ->orderBy('id')
-            ->get(['id', 'description', 'vendor_name', 'amount', 'paid_from']);
+            ->get(['id', 'description', 'vendor_name', 'expense_category_id', 'amount', 'paid_from']);
+
+        // Offered so a row corrected here can be filed the same way one created on the
+        // Expenses page can. Branch-scoped plus the shared ones, matching how the
+        // expense form elsewhere resolves them.
+        $categories = ExpenseCategory::query()
+            ->where(fn ($q) => $q->where('branch_id', $branchId)->orWhereNull('branch_id'))
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
 
         $totals = $this->recalculator()->totalsFor($branchId, $date);
 
@@ -278,10 +288,12 @@ class DayClosureController extends Controller
             'cash_sales_total' => round($totals['cash_sales_total'] + $totals['mixed_cash_total'], 2),
             'order_count' => $totals['order_count'],
             'cash_expenses_total' => round($totals['cash_expenses_total'], 2),
+            'categories' => $categories,
             'expenses' => $expenses->map(fn (Expense $e) => [
                 'id' => $e->id,
                 'description' => $e->description,
                 'vendor_name' => $e->vendor_name,
+                'expense_category_id' => $e->expense_category_id,
                 'amount' => (float) $e->amount,
                 'paid_from' => $e->paid_from,
             ]),
@@ -305,6 +317,7 @@ class DayClosureController extends Controller
             'expenses.*.id' => ['nullable', 'integer', 'exists:expenses,id'],
             'expenses.*.description' => ['nullable', 'string', 'max:255'],
             'expenses.*.vendor_name' => ['nullable', 'string', 'max:140'],
+            'expenses.*.expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
             'expenses.*.amount' => ['required_with:expenses', 'numeric', 'min:0'],
             'expenses.*.paid_from' => ['nullable', Rule::in(Expense::PAID_FROM)],
             'deleted_expense_ids' => ['nullable', 'array'],
@@ -331,11 +344,24 @@ class DayClosureController extends Controller
 
             foreach ($validated['expenses'] ?? [] as $row) {
                 $payload = [
-                    'description' => $row['description'] ?? null,
-                    'vendor_name' => $row['vendor_name'] ?? null,
                     'amount' => round((float) $row['amount'], 2),
                     'paid_from' => $row['paid_from'] ?? 'drawer',
                 ];
+
+                // Only the fields the form actually carried.
+                //
+                // This drawer submits every cash row on the day, not just the ones that
+                // were touched, so defaulting an absent key to null did not mean "cleared"
+                // — it erased that field from rows nobody had edited. vendor_name went on
+                // every single save, because the form never carried it at all. An empty
+                // string is still a deliberate clear; an absent key now means "leave it".
+                foreach (['description', 'vendor_name', 'expense_category_id'] as $field) {
+                    if (array_key_exists($field, $row)) {
+                        $payload[$field] = ($row[$field] === '' || $row[$field] === null)
+                            ? null
+                            : $row[$field];
+                    }
+                }
 
                 if (! empty($row['id']) && in_array((int) $row['id'], $ownExpenses, true)) {
                     Expense::where('id', $row['id'])->update($payload);

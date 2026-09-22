@@ -319,7 +319,21 @@
                                                 <td>
                                                     <input type="text" class="rm-input" placeholder="Description"
                                                            :name="'expenses[' + i + '][description]'" x-model="row.description">
+                                                    {{-- Vendor and category have to be submitted, not merely displayed:
+                                                         this form posts every row on the day, so a field it leaves out is
+                                                         written back as null on rows nobody touched. --}}
+                                                    <input type="text" class="rm-input rh-cash-edit-sub" placeholder="Vendor (optional)"
+                                                           :name="'expenses[' + i + '][vendor_name]'" x-model="row.vendor_name">
                                                     <input type="hidden" :name="'expenses[' + i + '][id]'" :value="row.id || ''">
+                                                </td>
+                                                <td style="width:10rem;">
+                                                    <select class="rm-input" :name="'expenses[' + i + '][expense_category_id]'"
+                                                            x-model="row.expense_category_id">
+                                                        <option value="">Uncategorised</option>
+                                                        <template x-for="c in (day.categories || [])" :key="c.id">
+                                                            <option :value="c.id" x-text="c.name"></option>
+                                                        </template>
+                                                    </select>
                                                 </td>
                                                 <td style="width:9rem;">
                                                     <input type="number" step="0.01" min="0" class="rm-input"
@@ -429,7 +443,7 @@
                     return this.variance < 0 ? 'rh-close-variance--short' : 'rh-close-variance--over';
                 },
                 addExpense() {
-                    this.expenses.push({ id: null, description: '', amount: 0, paid_from: 'drawer' });
+                    this.expenses.push({ id: null, description: '', vendor_name: '', expense_category_id: '', amount: 0, paid_from: 'drawer' });
                 },
                 removeExpense(index) {
                     const row = this.expenses[index];
@@ -455,6 +469,8 @@
                         this.expenses = data.expenses.map(e => ({
                             id: e.id,
                             description: e.description || '',
+                            vendor_name: e.vendor_name || '',
+                            expense_category_id: e.expense_category_id ? String(e.expense_category_id) : '',
                             amount: Number(e.amount),
                             paid_from: e.paid_from || 'drawer',
                         }));
