@@ -8,6 +8,42 @@ use Illuminate\Support\Collection;
 
 class AttendanceSummaryCalculator
 {
+    public const TIERS = ['first', 'second', 'third'];
+
+    public const TYPES = ['amount', 'percent'];
+
+    /**
+     * What one day at this tier costs the employee.
+     *
+     * A tier is either a flat peso amount or a proportion of that employee's daily
+     * rate. This is the single definition of that: the weekly summary and the per-day
+     * breakdown on the payroll detail page both come through here, because two copies
+     * of this arithmetic drifting apart is how a stored payroll total comes to
+     * disagree with the rows printed underneath it.
+     *
+     * Unknown or missing type falls back to the shape the schema used to hardcode —
+     * amounts on the first two tiers, a percentage on the third — so a rule written
+     * before the tiers became configurable computes exactly what it always did.
+     *
+     * @param  array<string, mixed>  $rules
+     */
+    public function tierDeduction(string $tier, array $rules, float $dailyRate): float
+    {
+        $default = $tier === 'third' ? 'percent' : 'amount';
+        $type = (string) ($rules[$tier.'_deduction_type'] ?? $default);
+        if (! in_array($type, self::TYPES, true)) {
+            $type = $default;
+        }
+
+        if ($type === 'percent') {
+            $percent = max(0, min(100, (float) ($rules[$tier.'_deduction_percent'] ?? 0)));
+
+            return $dailyRate * ($percent / 100);
+        }
+
+        return max(0, (float) ($rules[$tier.'_deduction_amount'] ?? 0));
+    }
+
     /**
      * Build attendance summary metrics for a single employee in a date range.
      */
@@ -21,11 +57,8 @@ class AttendanceSummaryCalculator
         $standardDailyHours = max(0.5, (float) ($rules['standard_daily_hours'] ?? 8));
         $requiredClockInTime = (string) ($rules['required_clock_in_time'] ?? '09:00:00');
         $firstDeductionTime = (string) ($rules['first_deduction_time'] ?? '09:15:00');
-        $firstDeductionAmount = max(0, (float) ($rules['first_deduction_amount'] ?? 0));
         $secondDeductionTime = (string) ($rules['second_deduction_time'] ?? '09:30:00');
-        $secondDeductionAmount = max(0, (float) ($rules['second_deduction_amount'] ?? 0));
         $thirdDeductionTime = (string) ($rules['third_deduction_time'] ?? '10:00:00');
-        $thirdDeductionPercent = max(0, min(100, (float) ($rules['third_deduction_percent'] ?? 0)));
 
         $daysWithLogs = 0;
         $presentDays = 0;
@@ -105,9 +138,9 @@ class AttendanceSummaryCalculator
 
         $estimatedGross = $presentDays * $dailyRate;
 
-        $lateDeduction = ($firstHitDays * $firstDeductionAmount)
-            + ($secondHitDays * $secondDeductionAmount)
-            + ($thirdHitDays * ($dailyRate * ($thirdDeductionPercent / 100)));
+        $lateDeduction = ($firstHitDays * $this->tierDeduction('first', $rules, $dailyRate))
+            + ($secondHitDays * $this->tierDeduction('second', $rules, $dailyRate))
+            + ($thirdHitDays * $this->tierDeduction('third', $rules, $dailyRate));
         $estimatedDeductions = $lateDeduction;
         $estimatedNet = max(0, $estimatedGross - $estimatedDeductions);
 

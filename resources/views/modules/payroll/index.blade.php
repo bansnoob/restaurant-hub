@@ -9,10 +9,16 @@
             'required_clock_in_time' => '09:00',
             'first_deduction_time' => '09:15',
             'first_deduction_amount' => '50.00',
+            'first_deduction_type' => 'amount',
+            'first_deduction_percent' => '0.00',
             'second_deduction_time' => '09:30',
             'second_deduction_amount' => '100.00',
+            'second_deduction_type' => 'amount',
+            'second_deduction_percent' => '0.00',
             'third_deduction_time' => '10:00',
             'third_deduction_percent' => '50.00',
+            'third_deduction_type' => 'percent',
+            'third_deduction_amount' => '0.00',
         ];
         $rulesByBranch = $rules->mapWithKeys(fn ($rule, $branchId) => [
             (string) $branchId => [
@@ -20,10 +26,16 @@
                 'required_clock_in_time' => \Illuminate\Support\Carbon::parse($rule->required_clock_in_time)->format('H:i'),
                 'first_deduction_time' => \Illuminate\Support\Carbon::parse($rule->first_deduction_time)->format('H:i'),
                 'first_deduction_amount' => (string) $rule->first_deduction_amount,
+                'first_deduction_type' => (string) ($rule->first_deduction_type ?: 'amount'),
+                'first_deduction_percent' => (string) $rule->first_deduction_percent,
                 'second_deduction_time' => \Illuminate\Support\Carbon::parse($rule->second_deduction_time)->format('H:i'),
                 'second_deduction_amount' => (string) $rule->second_deduction_amount,
+                'second_deduction_type' => (string) ($rule->second_deduction_type ?: 'amount'),
+                'second_deduction_percent' => (string) $rule->second_deduction_percent,
                 'third_deduction_time' => \Illuminate\Support\Carbon::parse($rule->third_deduction_time)->format('H:i'),
                 'third_deduction_percent' => (string) $rule->third_deduction_percent,
+                'third_deduction_type' => (string) ($rule->third_deduction_type ?: 'percent'),
+                'third_deduction_amount' => (string) $rule->third_deduction_amount,
             ],
         ])->toArray();
         $hasActiveFilters = $filters['search'] !== '' || ! empty($filters['branch_id']) || $filters['status'] !== '';
@@ -247,7 +259,7 @@
 
                         <div class="rh-pay-rules-diagram">
                             <strong>Deduction Tiers</strong> · From required time-in onward:<br>
-                            <strong>1st Hit</strong> (after grace) → fixed amount &nbsp;·&nbsp; <strong>2nd Hit</strong> → fixed amount &nbsp;·&nbsp; <strong>3rd Hit</strong> → percent of daily rate
+                            Each tier charges either a fixed ₱ amount or a percent of that employee's daily rate — set per tier.
                         </div>
 
                         <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
@@ -261,36 +273,84 @@
                             </div>
                         </div>
 
-                        <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                        <div class="rm-field-row" style="grid-template-columns: 1fr 0.9fr 1fr;">
                             <div class="rm-field">
                                 <label class="rm-field-label">1st Hit Time</label>
                                 <input type="time" name="first_deduction_time" class="rm-input" x-model="rulesForm.first_deduction_time" required>
                             </div>
                             <div class="rm-field">
-                                <label class="rm-field-label">1st Deduction <span class="rm-field-opt">(₱)</span></label>
-                                <input type="number" step="0.01" min="0" name="first_deduction_amount" class="rm-input" x-model="rulesForm.first_deduction_amount" required>
+                                <label class="rm-field-label">Charge As</label>
+                                <select name="first_deduction_type" class="rm-input" x-model="rulesForm.first_deduction_type">
+                                    <option value="amount">Fixed ₱</option>
+                                    <option value="percent">% of daily</option>
+                                </select>
+                            </div>
+                            <div class="rm-field">
+                                {{-- Both inputs stay in the DOM and stay submitted: the server needs
+                                     the value for the shape that is NOT selected too, or switching
+                                     back later would find it zeroed. --}}
+                                <label class="rm-field-label">
+                                    1st Deduction
+                                    <span class="rm-field-opt" x-text="rulesForm.first_deduction_type === 'percent' ? '(% of daily)' : '(₱)'"></span>
+                                </label>
+                                <input type="number" step="0.01" min="0" max="100" name="first_deduction_percent" class="rm-input"
+                                       x-model="rulesForm.first_deduction_percent" x-show="rulesForm.first_deduction_type === 'percent'" required>
+                                <input type="number" step="0.01" min="0" name="first_deduction_amount" class="rm-input"
+                                       x-model="rulesForm.first_deduction_amount" x-show="rulesForm.first_deduction_type !== 'percent'" required>
                             </div>
                         </div>
 
-                        <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                        <div class="rm-field-row" style="grid-template-columns: 1fr 0.9fr 1fr;">
                             <div class="rm-field">
                                 <label class="rm-field-label">2nd Hit Time</label>
                                 <input type="time" name="second_deduction_time" class="rm-input" x-model="rulesForm.second_deduction_time" required>
                             </div>
                             <div class="rm-field">
-                                <label class="rm-field-label">2nd Deduction <span class="rm-field-opt">(₱)</span></label>
-                                <input type="number" step="0.01" min="0" name="second_deduction_amount" class="rm-input" x-model="rulesForm.second_deduction_amount" required>
+                                <label class="rm-field-label">Charge As</label>
+                                <select name="second_deduction_type" class="rm-input" x-model="rulesForm.second_deduction_type">
+                                    <option value="amount">Fixed ₱</option>
+                                    <option value="percent">% of daily</option>
+                                </select>
+                            </div>
+                            <div class="rm-field">
+                                {{-- Both inputs stay in the DOM and stay submitted: the server needs
+                                     the value for the shape that is NOT selected too, or switching
+                                     back later would find it zeroed. --}}
+                                <label class="rm-field-label">
+                                    2nd Deduction
+                                    <span class="rm-field-opt" x-text="rulesForm.second_deduction_type === 'percent' ? '(% of daily)' : '(₱)'"></span>
+                                </label>
+                                <input type="number" step="0.01" min="0" max="100" name="second_deduction_percent" class="rm-input"
+                                       x-model="rulesForm.second_deduction_percent" x-show="rulesForm.second_deduction_type === 'percent'" required>
+                                <input type="number" step="0.01" min="0" name="second_deduction_amount" class="rm-input"
+                                       x-model="rulesForm.second_deduction_amount" x-show="rulesForm.second_deduction_type !== 'percent'" required>
                             </div>
                         </div>
 
-                        <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                        <div class="rm-field-row" style="grid-template-columns: 1fr 0.9fr 1fr;">
                             <div class="rm-field">
                                 <label class="rm-field-label">3rd Hit Time</label>
                                 <input type="time" name="third_deduction_time" class="rm-input" x-model="rulesForm.third_deduction_time" required>
                             </div>
                             <div class="rm-field">
-                                <label class="rm-field-label">3rd Deduction <span class="rm-field-opt">(% of daily)</span></label>
-                                <input type="number" step="0.01" min="0" max="100" name="third_deduction_percent" class="rm-input" x-model="rulesForm.third_deduction_percent" required>
+                                <label class="rm-field-label">Charge As</label>
+                                <select name="third_deduction_type" class="rm-input" x-model="rulesForm.third_deduction_type">
+                                    <option value="amount">Fixed ₱</option>
+                                    <option value="percent">% of daily</option>
+                                </select>
+                            </div>
+                            <div class="rm-field">
+                                {{-- Both inputs stay in the DOM and stay submitted: the server needs
+                                     the value for the shape that is NOT selected too, or switching
+                                     back later would find it zeroed. --}}
+                                <label class="rm-field-label">
+                                    3rd Deduction
+                                    <span class="rm-field-opt" x-text="rulesForm.third_deduction_type === 'percent' ? '(% of daily)' : '(₱)'"></span>
+                                </label>
+                                <input type="number" step="0.01" min="0" max="100" name="third_deduction_percent" class="rm-input"
+                                       x-model="rulesForm.third_deduction_percent" x-show="rulesForm.third_deduction_type === 'percent'" required>
+                                <input type="number" step="0.01" min="0" name="third_deduction_amount" class="rm-input"
+                                       x-model="rulesForm.third_deduction_amount" x-show="rulesForm.third_deduction_type !== 'percent'" required>
                             </div>
                         </div>
                     </div>

@@ -125,15 +125,15 @@
                     </div>
                     <div>
                         <p class="rh-pay-rules-cell-label">1st Hit</p>
-                        <p class="rh-pay-rules-cell-value">{{ \Illuminate\Support\Carbon::parse($rule->first_deduction_time)->format('h:i A') }} · ₱{{ number_format((float) $rule->first_deduction_amount, 2) }}</p>
+                        <p class="rh-pay-rules-cell-value">{{ \Illuminate\Support\Carbon::parse($rule->first_deduction_time)->format('h:i A') }} · {{ ($rule->first_deduction_type ?: 'amount') === 'percent' ? number_format((float) $rule->first_deduction_percent, 2).'% of daily' : '₱'.number_format((float) $rule->first_deduction_amount, 2) }}</p>
                     </div>
                     <div>
                         <p class="rh-pay-rules-cell-label">2nd Hit</p>
-                        <p class="rh-pay-rules-cell-value">{{ \Illuminate\Support\Carbon::parse($rule->second_deduction_time)->format('h:i A') }} · ₱{{ number_format((float) $rule->second_deduction_amount, 2) }}</p>
+                        <p class="rh-pay-rules-cell-value">{{ \Illuminate\Support\Carbon::parse($rule->second_deduction_time)->format('h:i A') }} · {{ ($rule->second_deduction_type ?: 'amount') === 'percent' ? number_format((float) $rule->second_deduction_percent, 2).'% of daily' : '₱'.number_format((float) $rule->second_deduction_amount, 2) }}</p>
                     </div>
                     <div>
                         <p class="rh-pay-rules-cell-label">3rd Hit</p>
-                        <p class="rh-pay-rules-cell-value">{{ \Illuminate\Support\Carbon::parse($rule->third_deduction_time)->format('h:i A') }} · {{ number_format((float) $rule->third_deduction_percent, 2) }}%</p>
+                        <p class="rh-pay-rules-cell-value">{{ \Illuminate\Support\Carbon::parse($rule->third_deduction_time)->format('h:i A') }} · {{ ($rule->third_deduction_type ?: 'percent') === 'percent' ? number_format((float) $rule->third_deduction_percent, 2).'% of daily' : '₱'.number_format((float) $rule->third_deduction_amount, 2) }}</p>
                     </div>
                 </div>
             </div>

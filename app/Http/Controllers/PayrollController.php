@@ -238,10 +238,16 @@ class PayrollController extends Controller
             'standard_daily_hours' => ['required', 'numeric', 'min:1', 'max:24'],
             'required_clock_in_time' => ['required', 'date_format:H:i'],
             'first_deduction_time' => ['required', 'date_format:H:i'],
+            'first_deduction_type' => ['required', Rule::in(AttendanceSummaryCalculator::TYPES)],
             'first_deduction_amount' => ['required', 'numeric', 'min:0', 'max:100000'],
+            'first_deduction_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'second_deduction_time' => ['required', 'date_format:H:i'],
+            'second_deduction_type' => ['required', Rule::in(AttendanceSummaryCalculator::TYPES)],
             'second_deduction_amount' => ['required', 'numeric', 'min:0', 'max:100000'],
+            'second_deduction_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'third_deduction_time' => ['required', 'date_format:H:i'],
+            'third_deduction_type' => ['required', Rule::in(AttendanceSummaryCalculator::TYPES)],
+            'third_deduction_amount' => ['required', 'numeric', 'min:0', 'max:100000'],
             'third_deduction_percent' => ['required', 'numeric', 'min:0', 'max:100'],
         ]);
 
@@ -262,10 +268,16 @@ class PayrollController extends Controller
                 'standard_daily_hours' => (float) $validated['standard_daily_hours'],
                 'required_clock_in_time' => $requiredAt->format('H:i:s'),
                 'first_deduction_time' => $firstAt->format('H:i:s'),
+                'first_deduction_type' => $validated['first_deduction_type'],
                 'first_deduction_amount' => round((float) $validated['first_deduction_amount'], 2),
+                'first_deduction_percent' => round((float) $validated['first_deduction_percent'], 2),
                 'second_deduction_time' => $secondAt->format('H:i:s'),
+                'second_deduction_type' => $validated['second_deduction_type'],
                 'second_deduction_amount' => round((float) $validated['second_deduction_amount'], 2),
+                'second_deduction_percent' => round((float) $validated['second_deduction_percent'], 2),
                 'third_deduction_time' => $thirdAt->format('H:i:s'),
+                'third_deduction_type' => $validated['third_deduction_type'],
+                'third_deduction_amount' => round((float) $validated['third_deduction_amount'], 2),
                 'third_deduction_percent' => round((float) $validated['third_deduction_percent'], 2),
             ]
         );
@@ -484,6 +496,9 @@ class PayrollController extends Controller
                 'second_deduction_amount' => 100,
                 'third_deduction_time' => '10:00:00',
                 'third_deduction_percent' => 50,
+                'first_deduction_type' => 'amount',
+                'second_deduction_type' => 'amount',
+                'third_deduction_type' => 'percent',
                 'overtime_threshold_minutes' => 30,
                 'overtime_multiplier' => 1.25,
                 'undertime_rounding_minutes' => 15,
@@ -534,15 +549,18 @@ class PayrollController extends Controller
                 $lateMinutes = $requiredAt->diffInMinutes($clockInAt);
             }
 
+            // Through the calculator, never inline: these rows are printed directly
+            // under the stored total they are supposed to explain.
+            $calculator = app(AttendanceSummaryCalculator::class);
             if ($isPresent && $clockInAt->greaterThanOrEqualTo($thirdHitAt)) {
                 $tier = '3rd Hit';
-                $lateDeduction = $dailyRate * ($thirdDeductionPercent / 100);
+                $lateDeduction = $calculator->tierDeduction('third', $rules, $dailyRate);
             } elseif ($isPresent && $clockInAt->greaterThanOrEqualTo($secondHitAt)) {
                 $tier = '2nd Hit';
-                $lateDeduction = $secondDeductionAmount;
+                $lateDeduction = $calculator->tierDeduction('second', $rules, $dailyRate);
             } elseif ($isPresent && $clockInAt->greaterThanOrEqualTo($firstHitAt)) {
                 $tier = '1st Hit';
-                $lateDeduction = $firstDeductionAmount;
+                $lateDeduction = $calculator->tierDeduction('first', $rules, $dailyRate);
             }
 
             $gross = $isPresent ? $dailyRate : 0.0;
