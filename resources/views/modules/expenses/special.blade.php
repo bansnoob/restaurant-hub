@@ -212,8 +212,6 @@
 
         {{-- Detail drawer --}}
     @include('modules.expenses.partials.special-drawers')
-            </div>
-        </template>
     </div>
 
     @include('modules.expenses.partials.special-script')
