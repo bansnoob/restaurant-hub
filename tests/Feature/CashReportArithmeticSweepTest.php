@@ -277,8 +277,8 @@ class CashReportArithmeticSweepTest extends TestCase
         $totals = $service->totals($rows, '2026-09-01', '2026-09-30', $this->branch->id);
 
         $this->assertEqualsWithDelta(800.0, $totals['paid_outside_total'], 0.005);
-        $this->assertEqualsWithDelta(1200.0, $totals['cash_on_hand'], 0.005,
-            'cash_on_hand must be counted (2000) minus overhead (500) minus outside-paid (300)');
+        $this->assertEqualsWithDelta(200.0, $totals['cash_on_hand'], 0.005,
+            'net taken is counted (2000) less the 1,000 float, then less overhead (500) and outside-paid (300)');
     }
 
     public function test_a_non_cash_overhead_row_does_not_reduce_cash_on_hand(): void
@@ -298,7 +298,7 @@ class CashReportArithmeticSweepTest extends TestCase
         $rows = $service->dayRows('2026-09-01', '2026-09-30', $this->branch->id);
         $totals = $service->totals($rows, '2026-09-01', '2026-09-30', $this->branch->id);
 
-        $this->assertEqualsWithDelta(2000.0, $totals['cash_on_hand'], 0.005);
+        $this->assertEqualsWithDelta(1000.0, $totals['cash_on_hand'], 0.005);
     }
 
     public function test_overhead_outside_the_range_is_not_deducted(): void
@@ -318,7 +318,7 @@ class CashReportArithmeticSweepTest extends TestCase
         $rows = $service->dayRows('2026-09-01', '2026-09-30', $this->branch->id);
         $totals = $service->totals($rows, '2026-09-01', '2026-09-30', $this->branch->id);
 
-        $this->assertEqualsWithDelta(2000.0, $totals['cash_on_hand'], 0.005);
+        $this->assertEqualsWithDelta(1000.0, $totals['cash_on_hand'], 0.005);
     }
 
     // ---- the day row's own expense count -----------------------------------

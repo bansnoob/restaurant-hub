@@ -237,7 +237,7 @@ class CashReportOverheadTest extends TestCase
         $this->assertStringNotContainsString('₱-11,000.00', $strip);
 
         // The sign drives the colour: healthy green must not appear on a negative.
-        preg_match('/Cash on Hand<\/p>.*?class="rh-pay-stat-value ([^"]+)"/s', $strip, $m);
+        preg_match('/Net Cash Taken<\/p>.*?class="rh-pay-stat-value ([^"]+)"/s', $strip, $m);
         $this->assertStringContainsString('--warn', $m[1]);
         $this->assertStringNotContainsString('--success', $m[1]);
     }
@@ -251,7 +251,7 @@ class CashReportOverheadTest extends TestCase
         $strip = substr($html, strpos($html, 'rh-pay-stats'));
         $strip = substr($strip, 0, strpos($strip, 'rh-pay-toolbar'));
 
-        preg_match('/Cash on Hand<\/p>.*?class="rh-pay-stat-value ([^"]+)"/s', $strip, $m);
+        preg_match('/Net Cash Taken<\/p>.*?class="rh-pay-stat-value ([^"]+)"/s', $strip, $m);
         $this->assertStringContainsString('--success', $m[1]);
     }
 
@@ -270,6 +270,6 @@ class CashReportOverheadTest extends TestCase
 
         preg_match_all('/rh-pay-stat-label">([^<]+)</', $strip, $labels);
 
-        $this->assertSame(['Cash on Hand', 'Paid Outside Drawer', 'Cash Expenses'], $labels[1]);
+        $this->assertSame(['Net Cash Taken', 'Paid Outside Drawer', 'Cash Expenses'], $labels[1]);
     }
 }

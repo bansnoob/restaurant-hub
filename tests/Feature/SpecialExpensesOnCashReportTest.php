@@ -81,7 +81,7 @@ class SpecialExpensesOnCashReportTest extends TestCase
         $this->actingAs($this->cashier)
             ->get(route('day-closures.index'))
             ->assertOk()
-            ->assertSee('Cash on Hand');
+            ->assertSee('Net Cash Taken');
     }
 
     public function test_rows_are_listed_newest_paid_date_first(): void

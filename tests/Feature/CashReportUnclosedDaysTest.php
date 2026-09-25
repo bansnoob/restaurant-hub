@@ -346,7 +346,7 @@ class CashReportUnclosedDaysTest extends TestCase
 
         $this->assertNotContains('Expected', $labels[1]);
         $this->assertNotContains('Variance', $labels[1]);
-        $this->assertContains('Cash on Hand', $labels[1]);
+        $this->assertContains('Net Cash Taken', $labels[1]);
     }
 
     /** The per-day figures stay — they are the ones anyone acts on. */
