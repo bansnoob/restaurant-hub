@@ -8084,6 +8084,12 @@ select.rm-input {
 .rh-cash-table td.center { text-align: center; }
 .rh-cash-table td.num--accent { color: var(--rh-accent); font-family: var(--rh-font-serif); font-weight: 600; }
 .rh-cash-table td.num--success { color: var(--rh-success-text); }
+.rh-cash-stat-note {
+    margin: 0.25rem 0 0;
+    font-size: 0.7rem;
+    opacity: 0.65;
+}
+
 .rh-cash-table td.num--warn { color: var(--rh-amber-text); }
 .rh-cash-table td.num--danger { color: var(--rh-error-text); }
 

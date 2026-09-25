@@ -59,11 +59,25 @@ class CashReportService
         $paidOutside = $this->cashOverhead($dateFrom, $dateTo, $branchId)
             + $this->paidOutsideDrawer($dateFrom, $dateTo, $branchId);
 
+        // What the tills GENERATED over the window, not a balance held — nothing in
+        // this app records cash leaving a till, so a balance cannot be derived.
+        //
+        // Per day: counted_cash - opening_float. counted_cash is a snapshot that
+        // INCLUDES the float, and the float is the same physical money every day, so
+        // summing snapshots counted it once per day. Three identical 1,000-float days
+        // read 4,500 against 2,500 actually held, and the figure grew whenever the
+        // date range widened even though no money had moved.
+        $netTaken = $closed->sum(
+            fn (array $row) => (float) $row['counted_cash'] - (float) $row['opening_float']
+        );
+
         return [
             // Every figure on the strip reconciles:
-            //   cash_on_hand = counted - paid_outside_total
+            //   cash_on_hand = net taken - paid_outside_total
             //   cash_expenses_total = the day rows' own Cash Exp. column
-            'cash_on_hand' => round((float) $closed->sum('counted_cash') - $paidOutside, 2),
+            'cash_on_hand' => round($netTaken - $paidOutside, 2),
+            // Reported once, beside the total rather than inside it.
+            'float_in_till' => round((float) ($closed->sortByDesc('date')->first()['opening_float'] ?? 0), 2),
             'paid_outside_total' => round($paidOutside, 2),
             'expected_total' => round((float) $rows->sum('expected_cash'), 2),
             'variance_total' => round((float) $closed->sum('variance'), 2),
@@ -243,6 +257,7 @@ class CashReportService
             'closed' => true,
             'closure' => $closure,
             'closed_by' => $closure->closedBy?->name,
+            'opening_float' => (float) $closure->opening_float,
             'cash_sales_total' => (float) $closure->cash_sales_total + (float) $closure->mixed_cash_total,
             'cash_expenses_total' => (float) $closure->cash_expenses_total,
             'expected_cash' => (float) $closure->expected_cash,
@@ -265,6 +280,7 @@ class CashReportService
             'closed' => false,
             'closure' => null,
             'closed_by' => null,
+            'opening_float' => 0.0,
             'cash_sales_total' => $day['cash_sales_total'],
             'cash_expenses_total' => $day['cash_expenses_total'],
             // No opening float is carried: the drawer has never recorded one, so the

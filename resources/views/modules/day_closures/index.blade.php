@@ -42,20 +42,27 @@
              ~0 reads as "balanced" whether every day matched or every day was wild.
              Both stay per-row in the table below, which is where they mean something.
 
-             Cash on Hand is net of Cash Overhead, which sits beside it so the figure
-             never moves without the reason being on screen. Overhead is a range-level
-             position only — see CashReportService::cashOverhead() for why it must not
-             reach a day's expected_cash. --}}
+             Net Cash Taken is what the tills GENERATED over the window, not a balance
+             held: each day contributes counted_cash minus its own opening float. It is
+             net of Cash Overhead, which sits beside it so the figure never moves without
+             the reason being on screen. Overhead is a range-level position only — see
+             CashReportService::cashOverhead() for why it must not reach a day's
+             expected_cash.
+
+             The float is deliberately outside the total and reported once. It is the
+             same physical money every day, so summing counted_cash across days counted
+             it once per day and the figure grew with the length of the range. --}}
         <div class="rh-pay-stats rh-cash-stats">
             @php $cashOnHand = (float) $totals['cash_on_hand']; @endphp
             <div class="rh-pay-stat" style="--i:1;">
-                <p class="rh-pay-stat-label">Cash on Hand</p>
+                <p class="rh-pay-stat-label">Net Cash Taken</p>
                 {{-- Colour follows the sign. A window whose overhead payments exceed the
                      tills counted in it nets out negative, and that figure must not be
                      painted with the healthy colour. --}}
                 <p class="rh-pay-stat-value {{ $cashOnHand < 0 ? 'rh-pay-stat-value--warn' : 'rh-pay-stat-value--success' }}">
                     {{ $cashOnHand < 0 ? '−₱'.number_format(abs($cashOnHand), 2) : '₱'.number_format($cashOnHand, 2) }}
                 </p>
+                <p class="rh-cash-stat-note">Float ₱{{ number_format($totals['float_in_till'], 2) }} held separately</p>
             </div>
             <div class="rh-pay-stat" style="--i:2;">
                 {{-- Cash that left the business without passing through a till: monthly
