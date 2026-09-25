@@ -45,6 +45,12 @@ class RecalculateDayClosures extends Command
 
         $closures = $query->get();
         $drifted = [];
+        // Separate from drift on purpose. Drift asks "do the rows still say this?".
+        // This asks "does the closure agree with ITSELF?" — a stored expected_cash or
+        // variance that does not follow from the closure's own stored components. The
+        // drift loop cannot see that, because when the components match the live rows
+        // it stops before ever checking the two figures derived from them.
+        $inconsistent = [];
 
         foreach ($closures as $closure) {
             $date = $closure->closed_at_date->format('Y-m-d');
@@ -62,6 +68,26 @@ class RecalculateDayClosures extends Command
                 'expenses' => round($live['cash_expenses_total'] - (float) $closure->cash_expenses_total, 2),
             ];
 
+            $storedExpected = (float) $closure->opening_float
+                + (float) $closure->cash_sales_total
+                + (float) $closure->mixed_cash_total
+                - (float) $closure->cash_expenses_total;
+
+            $expectedOff = round($storedExpected - (float) $closure->expected_cash, 2);
+            $varianceOff = round(
+                ((float) $closure->counted_cash - (float) $closure->expected_cash) - (float) $closure->variance,
+                2
+            );
+
+            if ($expectedOff !== 0.0 || $varianceOff !== 0.0) {
+                $inconsistent[] = [
+                    'closure' => $closure,
+                    'date' => $date,
+                    'expected_off' => $expectedOff,
+                    'variance_off' => $varianceOff,
+                ];
+            }
+
             if (! array_filter($deltas)) {
                 continue;
             }
@@ -77,9 +103,43 @@ class RecalculateDayClosures extends Command
             ];
         }
 
-        $this->info(sprintf('Checked %d closures. %d disagree with their rows.', $closures->count(), count($drifted)));
+        $this->info(sprintf(
+            'Checked %d closures. %d disagree with their rows. %d disagree with themselves.',
+            $closures->count(),
+            count($drifted),
+            count($inconsistent)
+        ));
+
+        if ($inconsistent !== []) {
+            $this->warn('These closures do not follow from their own stored figures:');
+            $this->table(
+                ['Date', 'Br', 'expected is off by', 'variance is off by'],
+                array_map(fn (array $i) => [
+                    $i['date'],
+                    $i['closure']->branch_id,
+                    number_format($i['expected_off'], 2),
+                    number_format($i['variance_off'], 2),
+                ], $inconsistent)
+            );
+        }
+
+        if ($drifted === [] && $inconsistent === []) {
+            return self::SUCCESS;
+        }
 
         if ($drifted === []) {
+            if (! $this->option('apply')) {
+                $this->warn('Dry run. Nothing was written. Re-run with --apply to correct these.');
+
+                return self::SUCCESS;
+            }
+
+            foreach ($inconsistent as $i) {
+                $recalculator->recalculate($i['closure']);
+            }
+
+            $this->info(sprintf('Corrected %d closures.', count($inconsistent)));
+
             return self::SUCCESS;
         }
 
@@ -103,11 +163,15 @@ class RecalculateDayClosures extends Command
             return self::SUCCESS;
         }
 
-        foreach ($drifted as $d) {
-            $recalculator->recalculate($d['closure']);
+        $repair = collect($drifted)->pluck('closure')
+            ->merge(collect($inconsistent)->pluck('closure'))
+            ->unique('id');
+
+        foreach ($repair as $closure) {
+            $recalculator->recalculate($closure);
         }
 
-        $this->info(sprintf('Corrected %d closures.', count($drifted)));
+        $this->info(sprintf('Corrected %d closures.', $repair->count()));
 
         return self::SUCCESS;
     }
