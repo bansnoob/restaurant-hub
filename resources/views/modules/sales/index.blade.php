@@ -163,7 +163,7 @@
                     <option value="">All categories</option>
                     @foreach ($categories as $category)
                         <option value="{{ $category->id }}" {{ (string) $filters['category_id'] === (string) $category->id ? 'selected' : '' }}>
-                            {{ $category->name }}
+                            {{ $category->name }}@if ($labelCategoryBranches && $category->branch) · {{ $category->branch->name }}@endif
                         </option>
                     @endforeach
                 </select>

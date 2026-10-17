@@ -41,10 +41,15 @@ class SalesController extends Controller
         // Categories are branch-scoped (a null branch means shared). When a branch is chosen,
         // only offer categories that could actually appear for it.
         $categories = MenuCategory::where('is_active', true)
+            ->with('branch:id,name')
             ->when($branchId !== null, fn ($q) => $q->where(fn ($w) => $w
                 ->whereNull('branch_id')->orWhere('branch_id', $branchId)))
             ->orderBy('name')
             ->get();
+
+        // With no branch picked the list mixes branches, and two "Rice Meals" would look
+        // the same while each filters to its own branch's slice: label them.
+        $labelCategoryBranches = $branchId === null && $branches->count() > 1;
 
         $categoryFilter = $request->query('category_id');
         $categoryId = (! empty($categoryFilter) && is_numeric($categoryFilter)
@@ -151,6 +156,7 @@ class SalesController extends Controller
             'filters',
             'branches',
             'categories',
+            'labelCategoryBranches',
             'paymentBreakdown',
             'orderTypeBreakdown',
             'dailySeries',
