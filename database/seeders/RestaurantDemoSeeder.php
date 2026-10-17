@@ -106,9 +106,10 @@ class RestaurantDemoSeeder extends Seeder
                 ['name' => 'Supplies', 'slug' => 'supplies'],
                 ['name' => 'Rent', 'slug' => 'rent'],
             ] as $expenseCategory) {
+                // Company-wide, like every expense category (see the 2026_10_17 migration).
                 ExpenseCategory::updateOrCreate(
                     [
-                        'branch_id' => $branch->id,
+                        'branch_id' => null,
                         'slug' => $expenseCategory['slug'],
                     ],
                     [

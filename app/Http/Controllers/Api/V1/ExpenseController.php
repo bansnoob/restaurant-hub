@@ -14,7 +14,6 @@ use App\Services\DayClosureRecalculator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class ExpenseController extends Controller
@@ -44,9 +43,11 @@ class ExpenseController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
+
         $validated = $request->validate([
             'branch_id' => ['sometimes', 'integer', 'exists:branches,id'],
-            'expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
+            'expense_category_id' => ['nullable', 'integer', ExpenseCategory::availableToRule($branchId)],
             'expense_date' => ['required', 'date'],
             'reference_no' => ['nullable', 'string', 'max:60'],
             'vendor_name' => ['nullable', 'string', 'max:140'],
@@ -58,19 +59,8 @@ class ExpenseController extends Controller
             'new_category_name' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
-
         if (! empty($validated['new_category_name'])) {
-            $category = ExpenseCategory::firstOrCreate(
-                [
-                    'branch_id' => $branchId,
-                    'slug' => Str::slug($validated['new_category_name']),
-                ],
-                [
-                    'name' => $validated['new_category_name'],
-                    'is_active' => true,
-                ]
-            );
+            $category = ExpenseCategory::findOrCreateShared($validated['new_category_name']);
             $validated['expense_category_id'] = $category->id;
         }
 
@@ -114,7 +104,7 @@ class ExpenseController extends Controller
         // changed, so a client editing a subset of fields (e.g. just the
         // description/amount/payment method) does not wipe the others.
         $validated = $request->validate([
-            'expense_category_id' => ['sometimes', 'nullable', 'integer', 'exists:expense_categories,id'],
+            'expense_category_id' => ['sometimes', 'nullable', 'integer', ExpenseCategory::availableToRule((int) $expense->branch_id)],
             'expense_date' => ['sometimes', 'required', 'date'],
             'reference_no' => ['sometimes', 'nullable', 'string', 'max:60'],
             'vendor_name' => ['sometimes', 'nullable', 'string', 'max:140'],
@@ -180,9 +170,7 @@ class ExpenseController extends Controller
     {
         $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
 
-        $categories = ExpenseCategory::where(function ($q) use ($branchId) {
-            $q->where('branch_id', $branchId)->orWhereNull('branch_id');
-        })
+        $categories = ExpenseCategory::availableTo($branchId)
             ->where('is_active', true)
             ->orderBy('name')
             ->get();

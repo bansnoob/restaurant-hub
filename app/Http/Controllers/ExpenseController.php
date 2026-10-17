@@ -13,7 +13,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -159,7 +158,7 @@ class ExpenseController extends Controller
     {
         $validated = $request->validate([
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
-            'expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
+            'expense_category_id' => ['nullable', 'integer', ExpenseCategory::availableToRule($request->integer('branch_id'))],
             'expense_date' => ['required', 'date'],
             'reference_no' => ['nullable', 'string', 'max:60'],
             'vendor_name' => ['nullable', 'string', 'max:140'],
@@ -172,16 +171,7 @@ class ExpenseController extends Controller
         ]);
 
         if (! empty($validated['new_category_name'])) {
-            $category = ExpenseCategory::firstOrCreate(
-                [
-                    'branch_id' => $validated['branch_id'],
-                    'slug' => Str::slug($validated['new_category_name']),
-                ],
-                [
-                    'name' => $validated['new_category_name'],
-                    'is_active' => true,
-                ]
-            );
+            $category = ExpenseCategory::findOrCreateShared($validated['new_category_name']);
             $validated['expense_category_id'] = $category->id;
         }
 
@@ -220,7 +210,7 @@ class ExpenseController extends Controller
 
         $validated = $request->validate([
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
-            'expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
+            'expense_category_id' => ['nullable', 'integer', ExpenseCategory::availableToRule($request->integer('branch_id'))],
             'expense_date' => ['required', 'date'],
             'reference_no' => ['nullable', 'string', 'max:60'],
             'vendor_name' => ['nullable', 'string', 'max:140'],
@@ -233,16 +223,7 @@ class ExpenseController extends Controller
         ]);
 
         if (! empty($validated['new_category_name'])) {
-            $category = ExpenseCategory::firstOrCreate(
-                [
-                    'branch_id' => $validated['branch_id'],
-                    'slug' => Str::slug($validated['new_category_name']),
-                ],
-                [
-                    'name' => $validated['new_category_name'],
-                    'is_active' => true,
-                ]
-            );
+            $category = ExpenseCategory::findOrCreateShared($validated['new_category_name']);
             $validated['expense_category_id'] = $category->id;
         }
 

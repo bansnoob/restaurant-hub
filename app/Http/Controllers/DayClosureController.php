@@ -269,10 +269,8 @@ class DayClosureController extends Controller
             ->get(['id', 'description', 'vendor_name', 'expense_category_id', 'amount', 'paid_from']);
 
         // Offered so a row corrected here can be filed the same way one created on the
-        // Expenses page can. Branch-scoped plus the shared ones, matching how the
-        // expense form elsewhere resolves them.
-        $categories = ExpenseCategory::query()
-            ->where(fn ($q) => $q->where('branch_id', $branchId)->orWhereNull('branch_id'))
+        // Expenses page can: the shared list, the same one every expense form offers.
+        $categories = ExpenseCategory::availableTo($branchId)
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name']);
@@ -319,7 +317,7 @@ class DayClosureController extends Controller
             'expenses.*.id' => ['nullable', 'integer', 'exists:expenses,id'],
             'expenses.*.description' => ['nullable', 'string', 'max:255'],
             'expenses.*.vendor_name' => ['nullable', 'string', 'max:140'],
-            'expenses.*.expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
+            'expenses.*.expense_category_id' => ['nullable', 'integer', ExpenseCategory::availableToRule((int) $dayClosure->branch_id)],
             'expenses.*.amount' => ['required_with:expenses', 'numeric', 'min:0'],
             'expenses.*.paid_from' => ['nullable', Rule::in(Expense::PAID_FROM)],
             'deleted_expense_ids' => ['nullable', 'array'],
