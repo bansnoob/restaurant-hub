@@ -78,16 +78,21 @@ class PayrollController extends Controller
 
         $rules = PayrollRule::query()->get()->keyBy('branch_id');
 
+        // The cards follow the branch filter (a report's branch is its period's), so a
+        // filtered page never shows the company's totals beside one branch's list.
         $monthStart = now()->startOfMonth()->toDateString();
+        $statsBase = PayrollEntry::query()
+            ->when(! empty($branchFilter) && is_numeric($branchFilter), fn ($q) => $q
+                ->whereHas('payrollPeriod', fn ($p) => $p->where('branch_id', (int) $branchFilter)));
         $stats = [
-            'drafts' => PayrollEntry::where('status', 'draft')->count(),
-            'finalized_this_month' => PayrollEntry::where('status', 'paid')
+            'drafts' => (clone $statsBase)->where('status', 'draft')->count(),
+            'finalized_this_month' => (clone $statsBase)->where('status', 'paid')
                 ->whereDate('updated_at', '>=', $monthStart)
                 ->count(),
-            'paid_total_this_month' => (float) PayrollEntry::where('status', 'paid')
+            'paid_total_this_month' => (float) (clone $statsBase)->where('status', 'paid')
                 ->whereDate('updated_at', '>=', $monthStart)
                 ->sum('net_pay'),
-            'pending_total' => (float) PayrollEntry::where('status', 'draft')->sum('net_pay'),
+            'pending_total' => (float) (clone $statsBase)->where('status', 'draft')->sum('net_pay'),
         ];
 
         $filters = [

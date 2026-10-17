@@ -63,13 +63,17 @@ class EmployeeController extends Controller
             ->paginate(20)
             ->withQueryString();
 
+        // The cards follow the branch filter (and only that one): filtered to a branch,
+        // they describe that branch's staff, not the whole company's.
+        $statsBase = Employee::query()
+            ->when(! empty($branchId) && is_numeric($branchId), fn ($q) => $q->where('branch_id', (int) $branchId));
         $stats = [
-            'total' => Employee::count(),
-            'active' => Employee::where('is_active', true)->count(),
-            'inactive' => Employee::where('is_active', false)->count(),
-            'full_time' => Employee::where('employment_type', 'full_time')->where('is_active', true)->count(),
-            'part_time' => Employee::where('employment_type', 'part_time')->where('is_active', true)->count(),
-            'contract' => Employee::where('employment_type', 'contract')->where('is_active', true)->count(),
+            'total' => (clone $statsBase)->count(),
+            'active' => (clone $statsBase)->where('is_active', true)->count(),
+            'inactive' => (clone $statsBase)->where('is_active', false)->count(),
+            'full_time' => (clone $statsBase)->where('employment_type', 'full_time')->where('is_active', true)->count(),
+            'part_time' => (clone $statsBase)->where('employment_type', 'part_time')->where('is_active', true)->count(),
+            'contract' => (clone $statsBase)->where('employment_type', 'contract')->where('is_active', true)->count(),
         ];
 
         $filters = [

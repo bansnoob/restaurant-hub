@@ -87,9 +87,15 @@ class InventoryController extends Controller
         $groups = $this->groupByCategory($ingredients);
 
         $allIngredients = Ingredient::with('branch')->orderBy('name')->get();
-        $lowStock = $allIngredients->filter(fn (Ingredient $i) => $i->isLowStock());
 
-        $summary = $this->inventory->summary(null);
+        // The banner, the stat strip and Recent Counts follow the branch filter, so a
+        // filtered page never reports another branch's stock. Active-only, like the
+        // low-stock tile: a deactivated ingredient keeps its reorder_level.
+        $lowStock = $allIngredients->filter(fn (Ingredient $i) => $i->is_active
+            && $i->isLowStock()
+            && ($branchId === null || (int) $i->branch_id === $branchId));
+
+        $summary = $this->inventory->summary($branchId);
         $stats = [
             'total_items' => $summary->totalItems,
             'active_items' => $summary->activeItems,
@@ -99,7 +105,7 @@ class InventoryController extends Controller
             'counts_this_month' => $summary->countsThisMonth,
         ];
 
-        $recentCounts = $this->inventory->recentCounts(null);
+        $recentCounts = $this->inventory->recentCounts($branchId);
 
         $filters = [
             'search' => $search,
