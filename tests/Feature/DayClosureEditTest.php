@@ -258,10 +258,10 @@ class DayClosureEditTest extends TestCase
         $cashier = User::factory()->create(['branch_id' => $this->branch->id]);
         $cashier->assignRole('cashier');
 
-        $this->actingAs($cashier)->getJson(route('day-close.edit', $closure))->assertForbidden();
+        $this->actingAs($cashier)->getJson(route('day-close.edit', $closure))->assertRedirect(url('/pos/'));
         $this->actingAs($cashier)
             ->put(route('day-close.update', $closure), ['counted_cash' => 1])
-            ->assertForbidden();
+            ->assertRedirect(url('/pos/'));
     }
 
     public function test_a_guest_cannot_edit_a_closed_day(): void

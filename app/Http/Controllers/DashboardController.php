@@ -23,14 +23,9 @@ class DashboardController extends Controller
 {
     public function index(Request $request): View|RedirectResponse
     {
-        // Every figure below adds up all branches, so this is the owner's page.
-        // A cashier's job is the POS; login sends everyone here, so bounce them on.
-        $user = $request->user();
-        if (! $user->hasRole('owner')) {
-            abort_unless($user->hasRole('cashier'), 403);
-
-            return redirect('/pos/');
-        }
+        // Every figure below adds up all branches, so this is the owner's page. A
+        // cashier never reaches here: the 'cashier.pos' middleware sends them to the POS.
+        abort_unless($request->user()->hasRole('owner'), 403);
 
         $today = now()->toDateString();
         $monthStart = now()->startOfMonth()->toDateString();

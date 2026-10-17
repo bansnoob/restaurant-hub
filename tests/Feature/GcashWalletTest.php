@@ -385,12 +385,12 @@ class GcashWalletTest extends TestCase
             'branch_id' => $this->branch->id,
             'opening_balance' => 1.00,
             'opening_date' => now()->toDateString(),
-        ])->assertForbidden();
+        ])->assertRedirect(url('/pos/'));
 
         $this->actingAs($cashier)->put(
             route('gcash-report.entries.status', ['type' => 'sale', 'id' => $sale->id]),
             ['status' => 'declined']
-        )->assertForbidden();
+        )->assertRedirect(url('/pos/'));
 
         $this->assertDatabaseCount('gcash_entry_statuses', 0);
         $this->assertDatabaseCount('gcash_wallets', 0);

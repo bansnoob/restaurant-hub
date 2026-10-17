@@ -539,6 +539,6 @@ class InventoryWebRegressionTest extends TestCase
         $cashier = User::factory()->create(['branch_id' => $this->branch->id]);
         $cashier->assignRole('cashier');
 
-        $this->actingAs($cashier)->get(route('inventory.index'))->assertForbidden();
+        $this->actingAs($cashier)->get(route('inventory.index'))->assertRedirect(url('/pos/'));
     }
 }

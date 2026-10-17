@@ -14,9 +14,10 @@ use Tests\TestCase;
 
 /**
  * A cashier works one branch: the one their employee record (or their own
- * users.branch_id) points at. Every write a cashier can make — closing a day,
- * logging an expense, clocking staff in or out — must land on that branch, and
- * Day Close must default to it instead of to the lowest-id branch.
+ * users.branch_id) points at. Every write a cashier can make on the iPad API —
+ * closing a day, logging an expense, clocking staff in or out — must land on that
+ * branch. (The website no longer serves cashiers at all; see CashierPosOnlyTest.)
+ * Owners still act on any branch, on the API and the website.
  */
 class CashierBranchScopeTest extends TestCase
 {
@@ -53,40 +54,7 @@ class CashierBranchScopeTest extends TestCase
         ];
     }
 
-    // ── Web Day Close ────────────────────────────────────────────────────
-
-    public function test_the_close_drawer_defaults_to_the_cashiers_employee_branch(): void
-    {
-        $this->actingAs($this->cashier)->getJson('/day-close/preview')
-            ->assertOk()
-            ->assertJsonPath('branch.id', $this->second->id);
-    }
-
-    public function test_the_close_drawer_only_offers_the_cashiers_branch(): void
-    {
-        $branches = $this->actingAs($this->cashier)->getJson('/day-close/preview')->json('available_branches');
-
-        $this->assertSame([$this->second->id], array_column($branches, 'id'));
-    }
-
-    public function test_a_cashier_cannot_preview_another_branch(): void
-    {
-        $this->actingAs($this->cashier)->getJson('/day-close/preview?branch_id='.$this->main->id)->assertForbidden();
-    }
-
-    public function test_a_cashier_cannot_close_another_branchs_day(): void
-    {
-        $this->actingAs($this->cashier)->postJson('/day-close', $this->closePayload($this->main))->assertForbidden();
-
-        $this->assertSame(0, DayClosure::count());
-    }
-
-    public function test_a_cashier_can_close_their_own_branchs_day(): void
-    {
-        $this->actingAs($this->cashier)->postJson('/day-close', $this->closePayload($this->second))->assertSuccessful();
-
-        $this->assertDatabaseHas('day_closures', ['branch_id' => $this->second->id]);
-    }
+    // ── Owner (website) ──────────────────────────────────────────────────
 
     public function test_the_owner_can_still_close_any_branch(): void
     {
@@ -148,8 +116,6 @@ class CashierBranchScopeTest extends TestCase
         $elsewhere = Employee::factory()->create(['branch_id' => $this->main->id]);
         $payload = ['employee_id' => $elsewhere->id, 'work_date' => now()->toDateString()];
 
-        $this->actingAs($this->cashier)->post('/attendance/clock-in', $payload)->assertForbidden();
-
         Sanctum::actingAs($this->cashier);
         $this->postJson('/api/v1/attendance/clock-in', $payload)->assertForbidden();
 
@@ -160,9 +126,9 @@ class CashierBranchScopeTest extends TestCase
     {
         $colleague = Employee::factory()->create(['branch_id' => $this->second->id]);
 
-        $this->actingAs($this->cashier)
-            ->post('/attendance/clock-in', ['employee_id' => $colleague->id, 'work_date' => now()->toDateString()])
-            ->assertRedirect();
+        Sanctum::actingAs($this->cashier);
+        $this->postJson('/api/v1/attendance/clock-in', ['employee_id' => $colleague->id, 'work_date' => now()->toDateString()])
+            ->assertCreated();
 
         $this->assertDatabaseHas('attendance_records', ['employee_id' => $colleague->id, 'branch_id' => $this->second->id]);
     }
@@ -177,8 +143,6 @@ class CashierBranchScopeTest extends TestCase
             'clock_in_at' => now()->subHours(2),
             'clock_out_at' => null,
         ]);
-
-        $this->actingAs($this->cashier)->post('/attendance/clock-out', ['record_id' => $record->id])->assertForbidden();
 
         Sanctum::actingAs($this->cashier);
         $this->postJson('/api/v1/attendance/clock-out', ['record_id' => $record->id])->assertForbidden();

@@ -207,9 +207,9 @@ class GcashAdjustmentTest extends TestCase
         $this->actingAs($this->owner)->post(route('gcash-report.adjustments.store'), $this->payload());
         $adjustment = GcashAdjustment::firstOrFail();
 
-        $this->actingAs($cashier)->post(route('gcash-report.adjustments.store'), $this->payload())->assertForbidden();
-        $this->actingAs($cashier)->put(route('gcash-report.adjustments.update', $adjustment), $this->payload())->assertForbidden();
-        $this->actingAs($cashier)->delete(route('gcash-report.adjustments.destroy', $adjustment))->assertForbidden();
+        $this->actingAs($cashier)->post(route('gcash-report.adjustments.store'), $this->payload())->assertRedirect(url('/pos/'));
+        $this->actingAs($cashier)->put(route('gcash-report.adjustments.update', $adjustment), $this->payload())->assertRedirect(url('/pos/'));
+        $this->actingAs($cashier)->delete(route('gcash-report.adjustments.destroy', $adjustment))->assertRedirect(url('/pos/'));
     }
 
     public function test_adjustment_validation_rejects_bad_input(): void

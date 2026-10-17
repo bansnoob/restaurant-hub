@@ -61,27 +61,14 @@ class SpecialExpensesOnCashReportTest extends TestCase
             ->assertSee('Kein (Sep.14-20, 2026)');
     }
 
-    /** The gate. A cashier must not receive these rows at all. */
+    /** The gate. A cashier must not receive these rows at all: the page sends them to the POS. */
     public function test_a_cashier_never_receives_the_special_expenses(): void
     {
         $this->overhead(['description' => 'Kein (Sep.14-20, 2026)', 'amount' => 2400]);
 
-        $response = $this->actingAs($this->cashier)
-            ->get(route('day-closures.index'))
-            ->assertOk();
-
-        $this->assertNull($response->viewData('special'), 'cashier was handed the special expense data');
-        $response->assertDontSee('Kein (Sep.14-20, 2026)');
-        $response->assertDontSee('Special Expenses');
-    }
-
-    /** The cashier can still do their job on this page. */
-    public function test_a_cashier_still_sees_the_cash_report_itself(): void
-    {
         $this->actingAs($this->cashier)
             ->get(route('day-closures.index'))
-            ->assertOk()
-            ->assertSee('Net Cash Taken');
+            ->assertRedirect(url('/pos/'));
     }
 
     public function test_rows_are_listed_newest_paid_date_first(): void

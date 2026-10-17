@@ -127,7 +127,7 @@ class EmployeeLoginTest extends TestCase
             'email' => 'ana@example.com',
             'password' => 'secret-pass-123',
             'password_confirmation' => 'secret-pass-123',
-        ])->assertForbidden();
+        ])->assertRedirect(url('/pos/'));
 
         $this->assertDatabaseMissing('users', ['email' => 'ana@example.com']);
     }

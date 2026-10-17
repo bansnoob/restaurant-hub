@@ -9,8 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
 use App\Models\DayClosure;
-use App\Models\Expense;
-use App\Models\Sale;
+use App\Services\DayClosureRecalculator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -196,33 +195,11 @@ class DayClosureController extends Controller
 
     private function computeTotals(int $branchId, string $date): array
     {
-        $salesQuery = Sale::query()
-            ->where('branch_id', $branchId)
-            ->where('status', 'completed')
-            ->whereDate('sale_datetime', $date);
-
-        $cashSales = (float) (clone $salesQuery)->where('payment_method', 'cash')->sum('grand_total');
-        $gcashSales = (float) (clone $salesQuery)->where('payment_method', 'gcash')->sum('grand_total');
-        $mixedCash = (float) (clone $salesQuery)->where('payment_method', 'mixed')->sum('cash_amount');
-        $mixedGcash = (float) (clone $salesQuery)->where('payment_method', 'mixed')->sum('gcash_amount');
-        $orderCount = (clone $salesQuery)->count();
-
-        $expensesQuery = Expense::query()
-            ->where('branch_id', $branchId)
-            ->where('status', 'approved')
-            ->whereDate('expense_date', $date);
-
-        $cashExpenses = (float) (clone $expensesQuery)->where('payment_method', 'cash')->sum('amount');
-        $expenseCount = (clone $expensesQuery)->count();
-
-        return [
-            'cash_sales_total' => $cashSales,
-            'mixed_cash_total' => $mixedCash,
-            'gcash_sales_total' => $gcashSales + $mixedGcash,
-            'cash_expenses_total' => $cashExpenses,
-            'order_count' => $orderCount,
-            'expense_count' => $expenseCount,
-        ];
+        // The shared arithmetic, not a copy. The copy that lived here counted cash
+        // expenses paid from outside the drawer as drawer cash, so an iPad-closed day
+        // stored the wrong expected cash and then moved the next time the shared
+        // recalculator ran over it.
+        return app(DayClosureRecalculator::class)->totalsFor($branchId, $date);
     }
 
     private function defaultOpeningFloat(int $branchId, string $date): float

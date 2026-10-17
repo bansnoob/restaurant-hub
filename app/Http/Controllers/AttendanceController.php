@@ -239,7 +239,11 @@ class AttendanceController extends Controller
             ]);
         }
 
-        $record->branch_id = $employee->branch_id;
+        // A new day is at the employee's branch; a correction to an existing one keeps
+        // the branch it was worked at, so it stays in that branch's payroll.
+        if (! $record->exists) {
+            $record->branch_id = $employee->branch_id;
+        }
         $record->clock_in_at = $clockInAt;
         $record->clock_out_at = $clockOutAt;
         $record->status = 'present';
@@ -247,7 +251,7 @@ class AttendanceController extends Controller
         $record->captured_by_user_id = $request->user()->id;
         $record->save();
 
-        $this->syncDraftPayrollEntriesForEmployeeDate($employee, $validated['work_date']);
+        $this->syncDraftPayrollEntriesForEmployeeDate($employee, $validated['work_date'], (int) $record->branch_id);
 
         return back()->with('success', 'Manual attendance entry saved.');
     }
@@ -291,7 +295,7 @@ class AttendanceController extends Controller
 
         $employee = Employee::find($record->employee_id);
         if ($employee) {
-            $this->syncDraftPayrollEntriesForEmployeeDate($employee, $workDate);
+            $this->syncDraftPayrollEntriesForEmployeeDate($employee, $workDate, (int) $record->branch_id);
         }
 
         return back()->with('success', 'Attendance time updated.');
@@ -301,21 +305,27 @@ class AttendanceController extends Controller
     {
         $employee = Employee::find($attendanceRecord->employee_id);
         $workDate = Carbon::parse($attendanceRecord->work_date)->toDateString();
+        $branchId = (int) $attendanceRecord->branch_id;
 
-        DB::transaction(function () use ($attendanceRecord, $employee, $workDate): void {
+        DB::transaction(function () use ($attendanceRecord, $employee, $workDate, $branchId): void {
             $attendanceRecord->delete();
 
             if ($employee) {
-                $this->syncDraftPayrollEntriesForEmployeeDate($employee, $workDate);
+                $this->syncDraftPayrollEntriesForEmployeeDate($employee, $workDate, $branchId);
             }
         });
 
         return back()->with('success', 'Daily attendance record deleted and related draft payroll reports updated.');
     }
 
-    private function syncDraftPayrollEntriesForEmployeeDate(Employee $employee, string $workDate): void
+    /**
+     * Refresh the draft reports covering this day at $branchId, the branch the day
+     * was worked at. That is the branch whose period pays it, which is not always
+     * the employee's current branch once they have moved.
+     */
+    private function syncDraftPayrollEntriesForEmployeeDate(Employee $employee, string $workDate, int $branchId): void
     {
-        $periods = PayrollPeriod::where('branch_id', $employee->branch_id)
+        $periods = PayrollPeriod::where('branch_id', $branchId)
             ->where('status', 'draft')
             ->whereDate('start_date', '<=', $workDate)
             ->whereDate('end_date', '>=', $workDate)
@@ -326,7 +336,7 @@ class AttendanceController extends Controller
         }
 
         $rule = PayrollRule::firstOrCreate(
-            ['branch_id' => $employee->branch_id],
+            ['branch_id' => $branchId],
             [
                 'standard_daily_hours' => 8,
                 'required_clock_in_time' => '09:00:00',
@@ -368,6 +378,7 @@ class AttendanceController extends Controller
             }
 
             $records = AttendanceRecord::where('employee_id', $employee->id)
+                ->where('branch_id', $branchId)
                 ->whereDate('work_date', '>=', $period->start_date)
                 ->whereDate('work_date', '<=', $period->end_date)
                 ->get();

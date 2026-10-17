@@ -362,17 +362,4 @@ class CashReportUnclosedDaysTest extends TestCase
             ->assertSee('93.00')      // counted, per row
             ->assertSee('7.00');      // variance pill, per row
     }
-
-    /** Cashiers share this tab and must see the gaps too. */
-    public function test_a_cashier_also_sees_unclosed_days(): void
-    {
-        $cashier = User::factory()->create();
-        $cashier->assignRole('cashier');
-        $this->sale(now()->subDays(2)->toDateString(), ['grand_total' => 321]);
-
-        $this->actingAs($cashier)
-            ->get(route('day-closures.index'))
-            ->assertOk()
-            ->assertSee('Not closed');
-    }
 }

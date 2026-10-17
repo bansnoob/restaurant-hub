@@ -40,6 +40,13 @@
         ])->toArray();
         $hasActiveFilters = $filters['search'] !== '' || ! empty($filters['branch_id']) || $filters['status'] !== '';
 
+        // The Rules drawer opens on the branch being looked at. With no filter it asks,
+        // rather than defaulting to whichever branch sorts first and inviting a save over
+        // that branch's rules. A lone branch needs no asking.
+        $rulesInitialBranchId = ! empty($filters['branch_id'])
+            ? (string) $filters['branch_id']
+            : ($branches->count() === 1 ? (string) $branches->first()->id : '');
+
         $employeesPayload = $employees->map(fn ($e) => [
             'id' => $e->id,
             'first_name' => $e->first_name,
@@ -57,7 +64,7 @@
             defaultRules: @js($defaultRules),
             rulesByBranch: @js($rulesByBranch),
             employees: @js($employeesPayload),
-            initialBranchId: @js((int) (optional($branches->first())->id ?? 0)),
+            initialBranchId: @js($rulesInitialBranchId),
             today: @js(now()->toDateString()),
         })"
         @keydown.escape.window="closeAll()"
@@ -437,6 +444,11 @@
                                 @endforeach
                             </select>
                         </div>
+                        {{-- The ticked list is submitted, not the visible checkboxes: the branch
+                             filter above hides rows, and a hidden row's tick must still count. --}}
+                        <template x-for="id in selectedEmployeeIds" :key="id">
+                            <input type="hidden" name="employee_ids[]" :value="id">
+                        </template>
                         <div class="rm-field">
                             <label class="rm-field-label">Employees <span class="rm-field-opt" x-text="'· ' + selectedEmployeeIds.length + ' selected'"></span></label>
                             <div class="rh-pay-emp-picker">
@@ -449,7 +461,7 @@
                                 </div>
                                 <template x-for="emp in visibleEmployees()" :key="emp.id">
                                     <label class="rh-pay-emp-row" :class="{'rh-pay-emp-row--no-rate': emp.daily_rate <= 0}">
-                                        <input type="checkbox" name="employee_ids[]" :value="emp.id" :checked="selectedEmployeeIds.includes(emp.id)" @change="toggleEmployee(emp.id)">
+                                        <input type="checkbox" :value="emp.id" :checked="selectedEmployeeIds.includes(emp.id)" @change="toggleEmployee(emp.id)">
                                         <span class="rh-pay-emp-row-name" x-text="emp.first_name + ' ' + emp.last_name + (emp.daily_rate <= 0 ? ' (no rate)' : '')"></span>
                                         <span class="rh-pay-emp-row-meta" x-text="(emp.employee_code || '—') + ' · ' + (emp.branch_name || '—')"></span>
                                     </label>
@@ -486,7 +498,7 @@
                 bulkBranchFilter: '',
                 selectedEmployeeIds: [],
                 openRules() {
-                    const initial = String(config.initialBranchId || '');
+                    const initial = config.initialBranchId;
                     this.rulesForm = { ...config.defaultRules, branch_id: initial };
                     this.loadBranchRules();
                     this.rulesOpen = true;
