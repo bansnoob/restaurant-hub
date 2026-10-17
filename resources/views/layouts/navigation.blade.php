@@ -159,7 +159,7 @@
                 {{-- Your own branch: the Menu tab edits its menu and your POS sales go to it.
                      Branches → Assign to me changes it. --}}
                 @php $sidebarBranch = Auth::user()->resolveBranch(); @endphp
-                <p class="rh-user-email" title="Your branch: the Menu tab and your POS sales use it">{{ $sidebarBranch ? 'Branch · '.$sidebarBranch->name : 'No branch assigned' }}</p>
+                <p class="rh-user-email" title="{{ $sidebarBranch ? 'Your branch: '.$sidebarBranch->name.'. ' : '' }}The Menu tab and your POS sales use it.">{{ $sidebarBranch ? 'Branch · '.$sidebarBranch->name : 'No branch assigned' }}</p>
             </div>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
