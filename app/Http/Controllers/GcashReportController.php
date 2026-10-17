@@ -268,7 +268,15 @@ class GcashReportController extends Controller
 
         // Applied once, outside the loop: this money belongs to no branch, so adding it
         // per-branch would subtract it as many times as there are branches.
-        $companyWideOverhead = $this->companyWideGcashOverhead($branchId);
+        //
+        // Counted from the earliest opening date, and only when every branch has a
+        // wallet: overhead paid before every opening balance was struck is already
+        // inside those balances. A branch with no wallet counts from the beginning
+        // of time, so then all-time overhead is the consistent figure.
+        $companySince = $wallets->count() === $branches->count()
+            ? $wallets->map(fn (GcashWallet $wallet) => $wallet->opening_date?->toDateString())->filter()->min()
+            : null;
+        $companyWideOverhead = $this->companyWideGcashOverhead($branchId, $companySince);
         $outflow += $companyWideOverhead;
         $balance -= $companyWideOverhead;
 
@@ -525,7 +533,7 @@ class GcashReportController extends Controller
      * branch, so it is reported as its own line and subtracted from the all-branches
      * total only.
      */
-    private function companyWideGcashOverhead(?int $branchId): float
+    private function companyWideGcashOverhead(?int $branchId, ?string $since = null): float
     {
         // A single-branch view is a statement about that branch's wallet, and this
         // money belongs to no branch, so it has no place there.
@@ -536,6 +544,8 @@ class GcashReportController extends Controller
         return (float) SpecialExpense::query()
             ->where('payment_method', 'gcash')
             ->whereNull('branch_id')
+            // Same settlement-date rule as walletSpecialExpensesQuery().
+            ->when($since !== null, fn ($q) => $q->whereRaw('COALESCE(paid_date, period_month) >= ?', [$since]))
             ->sum('amount');
     }
 
