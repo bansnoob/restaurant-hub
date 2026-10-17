@@ -156,6 +156,10 @@
             <div class="rh-sidebar-user-info">
                 <p class="rh-user-name">{{ Auth::user()->name }}</p>
                 <p class="rh-user-email">{{ Auth::user()->email }}</p>
+                {{-- Your own branch: the Menu tab edits its menu and your POS sales go to it.
+                     Branches → Assign to me changes it. --}}
+                @php $sidebarBranch = Auth::user()->resolveBranch(); @endphp
+                <p class="rh-user-email" title="Your branch: the Menu tab and your POS sales use it">{{ $sidebarBranch ? 'Branch · '.$sidebarBranch->name : 'No branch assigned' }}</p>
             </div>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf

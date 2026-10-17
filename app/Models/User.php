@@ -71,6 +71,14 @@ class User extends Authenticatable
         return $this->branch_id ?? $this->employee?->branch_id;
     }
 
+    /** The branch resolveBranchId() points at, if any. */
+    public function resolveBranch(): ?Branch
+    {
+        $branchId = $this->resolveBranchId();
+
+        return $branchId === null ? null : Branch::find($branchId);
+    }
+
     /**
      * Whether this user may read or write $branchId's records. Owners run every
      * branch; anyone else is confined to their own, and a user with no branch

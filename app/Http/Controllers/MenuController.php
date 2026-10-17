@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Models\Branch;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use Illuminate\Http\RedirectResponse;
@@ -38,6 +39,7 @@ class MenuController extends Controller
             'items' => $items,
             'activeCategoryId' => $activeCategoryId,
             'branchId' => $branchId,
+            'branchName' => Branch::find($branchId)?->name,
         ]);
     }
 

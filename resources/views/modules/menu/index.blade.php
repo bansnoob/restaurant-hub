@@ -20,7 +20,7 @@
     <div class="rm-topbar">
         <div>
             <h1 class="rm-page-title">Menu</h1>
-            <p class="rm-page-sub">{{ $categories->sum('menu_items_count') }} items across {{ $categories->count() }} categories</p>
+            <p class="rm-page-sub">{{ $branchName }} menu · {{ $categories->sum('menu_items_count') }} items across {{ $categories->count() }} categories</p>
         </div>
         <div class="rm-topbar-actions">
             <button type="button" class="rm-btn rm-btn--ghost" @click="openCategoryForm()">
