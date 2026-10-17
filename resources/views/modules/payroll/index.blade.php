@@ -40,6 +40,13 @@
         ])->toArray();
         $hasActiveFilters = $filters['search'] !== '' || ! empty($filters['branch_id']) || $filters['status'] !== '';
 
+        // The Rules drawer opens on the branch being looked at. With no filter it asks,
+        // rather than defaulting to whichever branch sorts first and inviting a save over
+        // that branch's rules. A lone branch needs no asking.
+        $rulesInitialBranchId = ! empty($filters['branch_id'])
+            ? (string) $filters['branch_id']
+            : ($branches->count() === 1 ? (string) $branches->first()->id : '');
+
         $employeesPayload = $employees->map(fn ($e) => [
             'id' => $e->id,
             'first_name' => $e->first_name,
@@ -57,7 +64,7 @@
             defaultRules: @js($defaultRules),
             rulesByBranch: @js($rulesByBranch),
             employees: @js($employeesPayload),
-            initialBranchId: @js((int) (optional($branches->first())->id ?? 0)),
+            initialBranchId: @js($rulesInitialBranchId),
             today: @js(now()->toDateString()),
         })"
         @keydown.escape.window="closeAll()"
@@ -486,7 +493,7 @@
                 bulkBranchFilter: '',
                 selectedEmployeeIds: [],
                 openRules() {
-                    const initial = String(config.initialBranchId || '');
+                    const initial = config.initialBranchId;
                     this.rulesForm = { ...config.defaultRules, branch_id: initial };
                     this.loadBranchRules();
                     this.rulesOpen = true;
