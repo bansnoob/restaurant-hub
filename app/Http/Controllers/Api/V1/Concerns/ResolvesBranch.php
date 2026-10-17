@@ -19,8 +19,10 @@ use Illuminate\Http\Request;
  */
 trait ResolvesBranch
 {
-    protected function resolveBranchId(Request $request): int
-    {
+    protected function resolveBranchId(
+        Request $request,
+        string $message = 'You cannot access inventory from another branch.',
+    ): int {
         $user = $request->user();
         $requested = $request->filled('branch_id') ? $request->integer('branch_id') : null;
 
@@ -32,7 +34,7 @@ trait ResolvesBranch
         abort_if(
             $requested !== null && $requested !== $ownBranchId,
             403,
-            'You cannot access inventory from another branch.'
+            $message
         );
 
         return $ownBranchId;

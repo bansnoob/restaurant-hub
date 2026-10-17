@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Exceptions\AttendanceException;
+use App\Http\Controllers\Api\V1\Concerns\ResolvesBranch;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\AttendanceRecordResource;
 use App\Models\AttendanceRecord;
@@ -16,6 +17,10 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class AttendanceController extends Controller
 {
+    use ResolvesBranch;
+
+    private const CROSS_BRANCH_DENIED = 'You cannot clock staff in or out at another branch.';
+
     public function __construct(
         private readonly AttendanceService $attendanceService,
     ) {}
@@ -29,6 +34,7 @@ class AttendanceController extends Controller
         ]);
 
         $employee = Employee::findOrFail($validated['employee_id']);
+        $this->authorizeBranchId($request, (int) $employee->branch_id, self::CROSS_BRANCH_DENIED);
 
         try {
             $record = $this->attendanceService->clockIn(
@@ -53,6 +59,7 @@ class AttendanceController extends Controller
         ]);
 
         $record = AttendanceRecord::findOrFail($validated['record_id']);
+        $this->authorizeBranchId($request, (int) $record->branch_id, self::CROSS_BRANCH_DENIED);
 
         try {
             $record = $this->attendanceService->clockOut($record);

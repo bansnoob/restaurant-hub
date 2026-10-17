@@ -70,4 +70,20 @@ class User extends Authenticatable
     {
         return $this->branch_id ?? $this->employee?->branch_id;
     }
+
+    /**
+     * Whether this user may read or write $branchId's records. Owners run every
+     * branch; anyone else is confined to their own, and a user with no branch
+     * has none.
+     */
+    public function canAccessBranch(int $branchId): bool
+    {
+        if ($this->hasRole('owner')) {
+            return true;
+        }
+
+        $ownBranchId = $this->resolveBranchId();
+
+        return $ownBranchId !== null && (int) $ownBranchId === $branchId;
+    }
 }

@@ -79,7 +79,9 @@ class GcashReportTest extends TestCase
         $cashier = User::factory()->create();
         $cashier->assignRole('cashier');
 
-        $this->actingAs($cashier)->get(route('dashboard'))->assertOk()->assertDontSee('GCash Report');
+        // The dashboard is owner-only now (a cashier is sent to the POS), so check the
+        // nav on a page a cashier still opens.
+        $this->actingAs($cashier)->get(route('attendance.index'))->assertOk()->assertDontSee('GCash Report');
         $this->actingAs($this->owner)->get(route('dashboard'))->assertOk()->assertSee('GCash Report');
     }
 

@@ -174,6 +174,7 @@ class AttendanceController extends Controller
         ]);
 
         $employee = Employee::findOrFail($validated['employee_id']);
+        $this->authorizeBranch($request, (int) $employee->branch_id);
 
         try {
             $this->attendanceService->clockIn(
@@ -196,6 +197,7 @@ class AttendanceController extends Controller
         ]);
 
         $record = AttendanceRecord::findOrFail($validated['record_id']);
+        $this->authorizeBranch($request, (int) $record->branch_id);
 
         try {
             $this->attendanceService->clockOut($record);
@@ -398,5 +400,15 @@ class AttendanceController extends Controller
                 'notes' => 'Auto-updated from attendance on '.$workDate.'.',
             ]);
         }
+    }
+
+    /** Owners clock anyone; a cashier only clocks staff at their own branch. */
+    private function authorizeBranch(Request $request, int $branchId): void
+    {
+        abort_unless(
+            $request->user()->canAccessBranch($branchId),
+            403,
+            'You cannot clock staff in or out at another branch.'
+        );
     }
 }

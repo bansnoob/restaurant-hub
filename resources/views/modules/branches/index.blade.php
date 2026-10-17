@@ -47,9 +47,9 @@
                 @csrf
                 <div>
                     <label class="rh-br-label">Code <span class="rh-br-required">*</span></label>
-                    <input type="text" name="code" required maxlength="32" placeholder="e.g. main"
+                    <input type="text" name="code" required maxlength="20" pattern="[A-Za-z0-9_\-]+" placeholder="e.g. main"
                            value="{{ old('code') }}" class="rh-br-input">
-                    <p class="rh-br-hint">Short identifier, lowercase. Used for URLs and SKUs.</p>
+                    <p class="rh-br-hint">Up to 20 letters, digits, - or _. Starts every order number.</p>
                 </div>
                 <div>
                     <label class="rh-br-label">Name <span class="rh-br-required">*</span></label>

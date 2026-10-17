@@ -81,6 +81,11 @@ Route::middleware('auth')->group(function () {
     Route::put('/employees/{employee}', [EmployeeController::class, 'update'])
         ->middleware('role:owner')
         ->name('employees.update');
+    // A cashier login for this employee. The login carries no branch of its own; it
+    // follows the employee's (User::resolveBranchId), so moving them moves it too.
+    Route::post('/employees/{employee}/login', [EmployeeController::class, 'storeLogin'])
+        ->middleware('role:owner')
+        ->name('employees.login.store');
     Route::patch('/employees/{employee}/toggle-active', [EmployeeController::class, 'toggleActive'])
         ->middleware('role:owner')
         ->name('employees.toggle-active');

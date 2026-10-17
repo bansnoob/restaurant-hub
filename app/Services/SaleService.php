@@ -46,7 +46,8 @@ class SaleService
             $discountTotal = 0.0;
 
             foreach ($data['items'] as $item) {
-                $menuItem = MenuItem::findOrFail($item['menu_item_id']);
+                // Scoped to the order's branch: a price is only valid on its own menu.
+                $menuItem = MenuItem::where('branch_id', $data['branch_id'])->findOrFail($item['menu_item_id']);
                 $quantity = (float) $item['quantity'];
                 $unitPrice = (float) $menuItem->base_price;
                 $itemDiscount = (float) ($item['discount_total'] ?? 0);
