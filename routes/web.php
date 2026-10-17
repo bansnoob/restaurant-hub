@@ -25,10 +25,12 @@ Route::get('/stores/ramen-naijiro', fn () => view('stores.ramen-naijiro'))->name
 Route::get('/stores/marugo-takoyaki', fn () => view('stores.marugo-takoyaki'))->name('stores.marugo-takoyaki');
 
 Route::get('/dashboard', [DashboardController::class, 'index'])
-    ->middleware(['auth', 'verified'])
+    ->middleware(['auth', 'verified', 'cashier.pos'])
     ->name('dashboard');
 
-Route::middleware('auth')->group(function () {
+// Every page here is the owner's. A cashier works the POS only (the iPad app on
+// the API), so 'cashier.pos' sends them there from any of these routes.
+Route::middleware(['auth', 'cashier.pos'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
@@ -51,13 +53,13 @@ Route::middleware('auth')->group(function () {
         ->name('branches.assign-to-me');
 
     Route::get('/attendance', [AttendanceController::class, 'index'])
-        ->middleware('role:owner|cashier')
+        ->middleware('role:owner')
         ->name('attendance.index');
     Route::post('/attendance/clock-in', [AttendanceController::class, 'clockIn'])
-        ->middleware('role:owner|cashier')
+        ->middleware('role:owner')
         ->name('attendance.clock-in');
     Route::post('/attendance/clock-out', [AttendanceController::class, 'clockOut'])
-        ->middleware('role:owner|cashier')
+        ->middleware('role:owner')
         ->name('attendance.clock-out');
     Route::post('/attendance/manual-entry', [AttendanceController::class, 'manualEntry'])
         ->middleware('role:owner')
@@ -70,13 +72,13 @@ Route::middleware('auth')->group(function () {
         ->name('attendance.destroy');
 
     Route::get('/employees', [EmployeeController::class, 'index'])
-        ->middleware('role:owner|cashier')
+        ->middleware('role:owner')
         ->name('employees.index');
     Route::get('/employees/{employee}/details', [EmployeeController::class, 'show'])
-        ->middleware('role:owner|cashier')
+        ->middleware('role:owner')
         ->name('employees.show');
     Route::post('/employees', [EmployeeController::class, 'store'])
-        ->middleware('role:owner|cashier')
+        ->middleware('role:owner')
         ->name('employees.store');
     Route::put('/employees/{employee}', [EmployeeController::class, 'update'])
         ->middleware('role:owner')
@@ -124,13 +126,13 @@ Route::middleware('auth')->group(function () {
 
     // Day closures (cash report)
     Route::get('/cash-report', [DayClosureController::class, 'index'])
-        ->middleware('role:owner|cashier')
+        ->middleware('role:owner')
         ->name('day-closures.index');
     Route::get('/day-close/preview', [DayClosureController::class, 'preview'])
-        ->middleware('role:owner|cashier')
+        ->middleware('role:owner')
         ->name('day-close.preview');
     Route::post('/day-close', [DayClosureController::class, 'store'])
-        ->middleware('role:owner|cashier')
+        ->middleware('role:owner')
         ->name('day-close.store');
     // A closed day is corrected, never reopened. Deleting the closure used to be the
     // only way to fix a day, which threw away the record of it having been closed.
@@ -141,10 +143,8 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:owner')
         ->name('day-close.update');
 
-    // GCash report (read-only, built from individual GCash sales).
-    // Owner-only: this exposes per-transaction sales rows and expense totals, the same class
-    // of data /sales and /expenses withhold from cashiers. (Cash Report can afford
-    // role:owner|cashier because it only serves day-level closure aggregates.)
+    // GCash report (read-only, built from individual GCash sales). Owner-only, like
+    // every page in this group.
     Route::get('/gcash-report', [GcashReportController::class, 'index'])
         ->middleware('role:owner')
         ->name('gcash-report.index');

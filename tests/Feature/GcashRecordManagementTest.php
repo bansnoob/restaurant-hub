@@ -79,9 +79,9 @@ class GcashRecordManagementTest extends TestCase
         $this->actingAs($this->owner)->post(route('gcash-report.records.store'), $this->recordPayload());
         $sale = Sale::firstOrFail();
 
-        $this->actingAs($cashier)->post(route('gcash-report.records.store'), $this->recordPayload())->assertForbidden();
-        $this->actingAs($cashier)->put(route('gcash-report.records.update', $sale), $this->recordPayload())->assertForbidden();
-        $this->actingAs($cashier)->delete(route('gcash-report.records.destroy', $sale))->assertForbidden();
+        $this->actingAs($cashier)->post(route('gcash-report.records.store'), $this->recordPayload())->assertRedirect(url('/pos/'));
+        $this->actingAs($cashier)->put(route('gcash-report.records.update', $sale), $this->recordPayload())->assertRedirect(url('/pos/'));
+        $this->actingAs($cashier)->delete(route('gcash-report.records.destroy', $sale))->assertRedirect(url('/pos/'));
     }
 
     public function test_owner_can_edit_a_manual_record(): void

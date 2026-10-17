@@ -79,7 +79,7 @@ class SpecialExpenseTest extends TestCase
 
         $this->actingAs($cashier)
             ->get(route('special-expenses.index'))
-            ->assertForbidden();
+            ->assertRedirect(url('/pos/'));
     }
 
     public function test_cashier_cannot_record_a_special_expense(): void
@@ -89,7 +89,7 @@ class SpecialExpenseTest extends TestCase
 
         $this->actingAs($cashier)
             ->post(route('special-expenses.store'), $this->payload())
-            ->assertForbidden();
+            ->assertRedirect(url('/pos/'));
 
         $this->assertSame(0, SpecialExpense::count());
     }

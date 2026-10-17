@@ -64,7 +64,7 @@ class GcashReportTest extends TestCase
 
         $this->actingAs($cashier)
             ->get(route('gcash-report.index'))
-            ->assertForbidden();
+            ->assertRedirect(url('/pos/'));
     }
 
     public function test_user_without_a_role_cannot_view_the_report(): void
@@ -74,14 +74,10 @@ class GcashReportTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_the_nav_link_is_hidden_from_cashiers(): void
+    // A cashier never sees the website's nav at all (they are sent to the POS), so only
+    // the owner's side of the old "hidden from cashiers" check is left to assert.
+    public function test_the_nav_link_shows_for_the_owner(): void
     {
-        $cashier = User::factory()->create();
-        $cashier->assignRole('cashier');
-
-        // The dashboard is owner-only now (a cashier is sent to the POS), so check the
-        // nav on a page a cashier still opens.
-        $this->actingAs($cashier)->get(route('attendance.index'))->assertOk()->assertDontSee('GCash Report');
         $this->actingAs($this->owner)->get(route('dashboard'))->assertOk()->assertSee('GCash Report');
     }
 

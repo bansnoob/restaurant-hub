@@ -123,7 +123,7 @@ class ExpenseClosedDayWarningTest extends TestCase
 
         $this->actingAs($cashier)
             ->getJson(route('expenses.day-status', ['branch_id' => $this->branch->id, 'date' => '2026-09-10']))
-            ->assertForbidden();
+            ->assertRedirect(url('/pos/'));
     }
 
     // ---- the write still goes through, and says so --------------------------
