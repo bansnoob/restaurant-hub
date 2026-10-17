@@ -84,7 +84,9 @@ class InventoryController extends Controller
         // loadMissing fires at most ONE extra query for the whole page, never
         // one per row.
         $ingredients = EloquentCollection::make($views->map->toDecoratedModel())->loadMissing('category');
-        $groups = $this->groupByCategory($ingredients);
+        // Across branches, each branch's own "Dry Goods" is its own section; name the
+        // branch so the headers can be told apart.
+        $groups = $this->groupByCategory($ingredients, labelBranches: $branchId === null && $branches->count() > 1);
 
         $allIngredients = Ingredient::with('branch')->orderBy('name')->get();
 
@@ -182,7 +184,7 @@ class InventoryController extends Controller
      * @param  EloquentCollection<int, Ingredient>  $ingredients
      * @return list<array{key: string, name: string, sort_order: int|null, items: list<Ingredient>}>
      */
-    private function groupByCategory(EloquentCollection $ingredients): array
+    private function groupByCategory(EloquentCollection $ingredients, bool $labelBranches = false): array
     {
         $groups = [];
         $tail = [];
@@ -197,9 +199,12 @@ class InventoryController extends Controller
             }
 
             $key = (string) $category->id;
+            // A branch's own category belongs to its ingredients' branch; a shared one
+            // (branch_id null) spans branches and keeps its plain name.
+            $branchLabel = $labelBranches && $category->branch_id !== null ? $ingredient->branch?->name : null;
             $groups[$key] ??= [
                 'key' => $key,
-                'name' => $category->name,
+                'name' => $branchLabel ? $category->name.' · '.$branchLabel : $category->name,
                 'sort_order' => (int) $category->sort_order,
                 'items' => [],
             ];
@@ -384,7 +389,9 @@ class InventoryController extends Controller
         $entries = $this->inventory->countEntries($stockCount);
 
         $countedAt = Carbon::parse($stockCount->counted_at);
-        $previousCount = StockCount::where('counted_at', '<', $stockCount->counted_at)
+        // The same branch's previous count: another branch's says nothing about this one.
+        $previousCount = StockCount::where('branch_id', $stockCount->branch_id)
+            ->where('counted_at', '<', $stockCount->counted_at)
             ->orderByDesc('counted_at')
             ->orderByDesc('id')
             ->first();
