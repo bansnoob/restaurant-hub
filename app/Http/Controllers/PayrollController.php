@@ -124,7 +124,9 @@ class PayrollController extends Controller
         $summary = null;
         $dailyBreakdown = collect();
         if ($selectedEmployee) {
+            // Only the days worked at this period's branch: those are the days it pays.
             $records = AttendanceRecord::where('employee_id', $selectedEmployee->id)
+                ->where('branch_id', $payrollPeriod->branch_id)
                 ->whereDate('work_date', '>=', $payrollPeriod->start_date)
                 ->whereDate('work_date', '<=', $payrollPeriod->end_date)
                 ->orderBy('work_date')
@@ -411,18 +413,78 @@ class PayrollController extends Controller
         }
     }
 
+    /**
+     * Each branch pays the days worked there, at its own rules. Every attendance
+     * record carries the branch it was worked at, so an employee who moved branch
+     * mid-range gets one report per branch instead of every day landing in their
+     * current branch's period. No attendance at all still yields a report at the
+     * current branch, as before.
+     */
     private function generateForEmployee(
         Employee $employee,
         string $startDate,
         string $endDate,
         AttendanceSummaryCalculator $calculator,
     ): void {
-        $branchName = $employee->branch?->name ?? 'Branch '.$employee->branch_id;
+        $recordsByBranch = AttendanceRecord::where('employee_id', $employee->id)
+            ->whereDate('work_date', '>=', $startDate)
+            ->whereDate('work_date', '<=', $endDate)
+            ->get()
+            ->groupBy(fn (AttendanceRecord $record) => (int) $record->branch_id);
+
+        if ($recordsByBranch->isEmpty()) {
+            $recordsByBranch = collect([(int) $employee->branch_id => collect()]);
+        }
+
+        foreach ($recordsByBranch as $branchId => $records) {
+            $this->generateEntryAtBranch($employee, (int) $branchId, $records, $startDate, $endDate, $calculator);
+        }
+
+        $this->removeStaleDrafts($employee, $recordsByBranch->keys()->map(fn ($id) => (int) $id)->all(), $startDate, $endDate);
+    }
+
+    /**
+     * A draft for these exact dates at a branch the employee no longer has days at
+     * would pay those days twice: once there, once where they now belong. This is
+     * what a report generated before the split looks like. Paid reports are never
+     * touched, and a period left with no reports is removed, as destroyReport does.
+     *
+     * @param  list<int>  $branchIds  the branches that do have days in the range
+     */
+    private function removeStaleDrafts(Employee $employee, array $branchIds, string $startDate, string $endDate): void
+    {
+        $stale = PayrollEntry::where('employee_id', $employee->id)
+            ->where('status', 'draft')
+            ->whereHas('payrollPeriod', fn ($q) => $q
+                ->whereDate('start_date', $startDate)
+                ->whereDate('end_date', $endDate)
+                ->whereNotIn('branch_id', $branchIds))
+            ->get();
+
+        foreach ($stale as $entry) {
+            $periodId = $entry->payroll_period_id;
+            $entry->delete();
+
+            if (! PayrollEntry::where('payroll_period_id', $periodId)->exists()) {
+                PayrollPeriod::whereKey($periodId)->delete();
+            }
+        }
+    }
+
+    private function generateEntryAtBranch(
+        Employee $employee,
+        int $branchId,
+        Collection $records,
+        string $startDate,
+        string $endDate,
+        AttendanceSummaryCalculator $calculator,
+    ): void {
+        $branchName = Branch::find($branchId)?->name ?? 'Branch '.$branchId;
         $startLabel = Carbon::parse($startDate)->format('M j');
         $endLabel = Carbon::parse($endDate)->format('M j');
         $cutoffLabel = $startLabel.' – '.$endLabel.' · '.$branchName;
 
-        $existingPeriod = PayrollPeriod::where('branch_id', $employee->branch_id)
+        $existingPeriod = PayrollPeriod::where('branch_id', $branchId)
             ->whereDate('start_date', $startDate)
             ->whereDate('end_date', $endDate)
             ->first();
@@ -434,7 +496,7 @@ class PayrollController extends Controller
                 'processed_at' => now(),
             ])
             : PayrollPeriod::create([
-                'branch_id' => $employee->branch_id,
+                'branch_id' => $branchId,
                 'start_date' => $startDate,
                 'end_date' => $endDate,
                 'cutoff_label' => $cutoffLabel,
@@ -451,13 +513,8 @@ class PayrollController extends Controller
             ]);
         }
 
-        $rule = $this->resolveRules((int) $employee->branch_id);
+        $rule = $this->resolveRules($branchId);
         $ruleValues = $rule->toArray();
-
-        $records = AttendanceRecord::where('employee_id', $employee->id)
-            ->whereDate('work_date', '>=', $startDate)
-            ->whereDate('work_date', '<=', $endDate)
-            ->get();
 
         $summary = $calculator->summarizeForEmployee($employee, $records, $startDate, $endDate, $ruleValues);
 
