@@ -7,6 +7,7 @@ use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -45,7 +46,7 @@ class MenuBranchIntegrityTest extends TestCase
         return MenuCategory::factory()->create([
             'branch_id' => $branch->id,
             'name' => $name,
-            'slug' => \Illuminate\Support\Str::slug($name),
+            'slug' => Str::slug($name),
         ]);
     }
 

@@ -14,6 +14,7 @@ use App\Models\PayrollRule;
 use App\Models\Sale;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -97,7 +98,7 @@ class BranchDeleteTest extends TestCase
         ];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('recordsThatBlock')]
+    #[DataProvider('recordsThatBlock')]
     public function test_a_branch_with_records_is_refused_with_a_message(\Closure $make, string $label): void
     {
         $branch = $this->createBranch();
