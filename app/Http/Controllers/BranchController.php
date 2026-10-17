@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\Branch;
-use App\Models\Employee;
 use App\Models\IngredientCategory;
-use App\Models\SpecialExpense;
-use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -24,6 +22,28 @@ class BranchController extends Controller
      * to letters, digits, dashes and underscores.
      */
     private const CODE_MAX_LENGTH = 20;
+
+    /**
+     * Anything a branch has done or been given keeps it alive: real records are
+     * restrict-on-delete in the schema, so deleting through them was a raw 500.
+     * Menu items and ingredients are refused too, as an owner's work. Say what is
+     * there and point at deactivation, which hides a branch without losing anything.
+     */
+    private const RECORDS_THAT_BLOCK_DELETE = [
+        'employees' => 'employee',
+        'users' => 'user',
+        'sales' => 'sale',
+        'expenses' => 'expense',
+        'special_expenses' => 'special expense',
+        'day_closures' => 'closed day',
+        'attendance_records' => 'attendance record',
+        'payroll_periods' => 'payroll period',
+        'stock_counts' => 'stock count',
+        'inventory_movements' => 'stock movement',
+        'gcash_adjustments' => 'GCash adjustment',
+        'menu_items' => 'menu item',
+        'ingredients' => 'ingredient',
+    ];
 
     public function index(): View
     {
@@ -95,30 +115,31 @@ class BranchController extends Controller
 
     public function destroy(Branch $branch): RedirectResponse
     {
-        $employeeCount = Employee::where('branch_id', $branch->id)->count();
-        $userCount = User::where('branch_id', $branch->id)->count();
+        $blocking = collect(self::RECORDS_THAT_BLOCK_DELETE)
+            ->map(fn (string $label, string $table) => [
+                'label' => $label,
+                'count' => DB::table($table)->where('branch_id', $branch->id)->count(),
+            ])
+            ->filter(fn (array $row) => $row['count'] > 0)
+            ->map(fn (array $row) => $row['count'].' '.Str::plural($row['label'], $row['count']));
 
-        if ($employeeCount > 0 || $userCount > 0) {
+        if ($blocking->isNotEmpty()) {
             return redirect()->route('branches.index')->with(
                 'error',
-                "Cannot delete \"{$branch->name}\": linked to {$employeeCount} employee(s) and {$userCount} user(s)."
+                "Cannot delete \"{$branch->name}\": it has ".$blocking->join(', ', ' and ').'. Deactivate it instead to hide it everywhere.'
             );
         }
 
-        // special_expenses.branch_id is restrictOnDelete, so this would otherwise
-        // surface as a raw FK exception. Overhead history is per-location and has
-        // no meaningful home once the branch is gone.
-        $overheadCount = SpecialExpense::where('branch_id', $branch->id)->count();
-
-        if ($overheadCount > 0) {
-            return redirect()->route('branches.index')->with(
-                'error',
-                "Cannot delete \"{$branch->name}\": it still has {$overheadCount} special expense(s) recorded against it."
-            );
-        }
-
+        // An empty branch takes its own setup with it. These categories are
+        // null-on-delete, so left behind they would become SHARED ones that show
+        // in every other branch's count walk and menu. (Its payroll rule, GCash
+        // wallet and shifts cascade.)
         $name = $branch->name;
-        $branch->delete();
+        DB::transaction(function () use ($branch): void {
+            IngredientCategory::where('branch_id', $branch->id)->delete();
+            DB::table('menu_categories')->where('branch_id', $branch->id)->delete();
+            $branch->delete();
+        });
 
         return redirect()->route('branches.index')->with('success', "Branch \"{$name}\" deleted.");
     }
