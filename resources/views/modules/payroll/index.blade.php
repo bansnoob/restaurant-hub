@@ -444,6 +444,11 @@
                                 @endforeach
                             </select>
                         </div>
+                        {{-- The ticked list is submitted, not the visible checkboxes: the branch
+                             filter above hides rows, and a hidden row's tick must still count. --}}
+                        <template x-for="id in selectedEmployeeIds" :key="id">
+                            <input type="hidden" name="employee_ids[]" :value="id">
+                        </template>
                         <div class="rm-field">
                             <label class="rm-field-label">Employees <span class="rm-field-opt" x-text="'· ' + selectedEmployeeIds.length + ' selected'"></span></label>
                             <div class="rh-pay-emp-picker">
@@ -456,7 +461,7 @@
                                 </div>
                                 <template x-for="emp in visibleEmployees()" :key="emp.id">
                                     <label class="rh-pay-emp-row" :class="{'rh-pay-emp-row--no-rate': emp.daily_rate <= 0}">
-                                        <input type="checkbox" name="employee_ids[]" :value="emp.id" :checked="selectedEmployeeIds.includes(emp.id)" @change="toggleEmployee(emp.id)">
+                                        <input type="checkbox" :value="emp.id" :checked="selectedEmployeeIds.includes(emp.id)" @change="toggleEmployee(emp.id)">
                                         <span class="rh-pay-emp-row-name" x-text="emp.first_name + ' ' + emp.last_name + (emp.daily_rate <= 0 ? ' (no rate)' : '')"></span>
                                         <span class="rh-pay-emp-row-meta" x-text="(emp.employee_code || '—') + ' · ' + (emp.branch_name || '—')"></span>
                                     </label>
