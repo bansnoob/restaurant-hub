@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Controllers\Api\V1\Concerns\ResolvesBranch;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\ExpenseCategoryResource;
 use App\Http\Resources\V1\ExpenseResource;
@@ -18,13 +19,17 @@ use Illuminate\Validation\Rule;
 
 class ExpenseController extends Controller
 {
+    use ResolvesBranch;
+
+    private const CROSS_BRANCH_DENIED = 'You cannot record an expense for another branch.';
+
     public function __construct(
         private readonly DayClosureRecalculator $recalculator,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        $branchId = $this->resolveBranchId($request);
+        $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
 
         $date = $request->string('date')->toString() ?: now()->toDateString();
 
@@ -53,7 +58,7 @@ class ExpenseController extends Controller
             'new_category_name' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $branchId = $validated['branch_id'] ?? $this->resolveBranchId($request);
+        $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
 
         if (! empty($validated['new_category_name'])) {
             $category = ExpenseCategory::firstOrCreate(
@@ -173,7 +178,7 @@ class ExpenseController extends Controller
 
     public function categories(Request $request): AnonymousResourceCollection
     {
-        $branchId = $this->resolveBranchId($request);
+        $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
 
         $categories = ExpenseCategory::where(function ($q) use ($branchId) {
             $q->where('branch_id', $branchId)->orWhereNull('branch_id');
@@ -226,19 +231,5 @@ class ExpenseController extends Controller
             403,
             'You cannot modify an expense from another branch.'
         );
-    }
-
-    private function resolveBranchId(Request $request): int
-    {
-        $user = $request->user();
-
-        if ($user->hasRole('owner') && $request->filled('branch_id')) {
-            return $request->integer('branch_id');
-        }
-
-        $branchId = $user->resolveBranchId();
-        abort_unless($branchId, 403, 'User is not linked to any branch.');
-
-        return $branchId;
     }
 }

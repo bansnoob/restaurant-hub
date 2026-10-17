@@ -20,6 +20,7 @@
         x-data="employeesPage({
             updateUrlTemplate: @js(route('employees.update', ['employee' => '__EMPLOYEE__'])),
             detailUrlTemplate: @js(route('employees.show', ['employee' => '__EMPLOYEE__'])),
+            loginUrlTemplate: @js(route('employees.login.store', ['employee' => '__EMPLOYEE__'])),
             isOwner: {{ $isOwner ? 'true' : 'false' }},
             initialFilters: @js($filters),
         })"
@@ -406,6 +407,46 @@
                                         </div>
                                     </template>
                                 </div>
+
+                                @if ($isOwner)
+                                    {{-- POS login: a cashier account that follows this employee's branch --}}
+                                    <div class="rh-emp-detail-section">
+                                        <p class="rh-emp-detail-label">POS Login</p>
+                                        <template x-if="detailData.login">
+                                            <div class="rh-emp-detail-grid">
+                                                <div>
+                                                    <span class="rh-emp-detail-item-label">Signs in as</span>
+                                                    <span class="rh-emp-detail-item-value" x-text="detailData.login.email"></span>
+                                                </div>
+                                                <div>
+                                                    <span class="rh-emp-detail-item-label">Branch</span>
+                                                    <span class="rh-emp-detail-item-value" x-text="detailData.employee.branch ? detailData.employee.branch.name : '—'"></span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <template x-if="!detailData.login">
+                                            <form method="POST" :action="loginUrlTemplate.replace('__EMPLOYEE__', detailData.employee.id)">
+                                                @csrf
+                                                <p class="rh-emp-detail-empty">No login yet. Create one so this employee can sign in to the POS as a cashier at their branch.</p>
+                                                <div class="rm-field">
+                                                    <label class="rm-field-label">Email</label>
+                                                    <input type="email" name="email" class="rm-input" required autocomplete="off" :value="detailData.employee.email || ''">
+                                                </div>
+                                                <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                                                    <div class="rm-field">
+                                                        <label class="rm-field-label">Password</label>
+                                                        <input type="password" name="password" class="rm-input" required minlength="8" autocomplete="new-password">
+                                                    </div>
+                                                    <div class="rm-field">
+                                                        <label class="rm-field-label">Confirm</label>
+                                                        <input type="password" name="password_confirmation" class="rm-input" required minlength="8" autocomplete="new-password">
+                                                    </div>
+                                                </div>
+                                                <button type="submit" class="rm-btn rm-btn--primary">Create login</button>
+                                            </form>
+                                        </template>
+                                    </div>
+                                @endif
                             </div>
                         </template>
                     </div>
@@ -529,6 +570,7 @@
                 isOwner: config.isOwner,
                 updateUrlTemplate: config.updateUrlTemplate,
                 detailUrlTemplate: config.detailUrlTemplate,
+                loginUrlTemplate: config.loginUrlTemplate,
                 activeFilter: config.initialFilters.active || 'all',
                 detailOpen: false,
                 detailData: null,

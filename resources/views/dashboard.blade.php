@@ -1,25 +1,20 @@
 <x-app-layout>
 
     @php
-        $closureBadgeClass = '';
-        $closureBadgeLabel = '';
-        $closureCardClass = 'rh-dash-closure--open';
-        if (! empty($todayClosure)) {
-            $variance = (float) $todayClosure->variance;
+        // Badge and card colour for one branch's closure, from its variance.
+        $closureLook = function ($closure): array {
+            $variance = (float) $closure->variance;
             if (abs($variance) < 0.01) {
-                $closureBadgeClass = 'rh-close-status-badge--match';
-                $closureBadgeLabel = 'Closed · Match';
-                $closureCardClass = 'rh-dash-closure--match';
-            } elseif ($variance < 0) {
-                $closureBadgeClass = 'rh-close-status-badge--short';
-                $closureBadgeLabel = 'Closed · Short ₱'.number_format(abs($variance), 0);
-                $closureCardClass = 'rh-dash-closure--short';
-            } else {
-                $closureBadgeClass = 'rh-close-status-badge--over';
-                $closureBadgeLabel = 'Closed · Over ₱'.number_format($variance, 0);
-                $closureCardClass = 'rh-dash-closure--over';
+                return ['badge' => 'rh-close-status-badge--match', 'label' => 'Closed · Match', 'card' => 'rh-dash-closure--match'];
             }
-        }
+            if ($variance < 0) {
+                return ['badge' => 'rh-close-status-badge--short', 'label' => 'Closed · Short ₱'.number_format(abs($variance), 0), 'card' => 'rh-dash-closure--short'];
+            }
+
+            return ['badge' => 'rh-close-status-badge--over', 'label' => 'Closed · Over ₱'.number_format($variance, 0), 'card' => 'rh-dash-closure--over'];
+        };
+        $openBranches = $branchClosures->whereNull('closure')->values();
+        $showBranchNames = $branchClosures->count() > 1;
     @endphp
 
     <div
@@ -63,16 +58,19 @@
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                     {{ $activeBranches }} {{ Str::plural('branch', $activeBranches) }}
                 </span>
-                @if (! empty($todayClosure))
-                    <span class="rh-close-status-badge {{ $closureBadgeClass }}">{{ $closureBadgeLabel }}</span>
-                @else
-                    <button type="button" class="rh-close-cta" @click="openDrawer()">
+                @if ($openBranches->isNotEmpty())
+                    <button type="button" class="rh-close-cta" @click="openDrawer({ branchId: {{ $openBranches->first()['branch_id'] }} })">
                         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <rect x="3" y="6" width="18" height="13" rx="2"/>
                             <path stroke-linecap="round" d="M3 10h18M7 14h2"/>
                         </svg>
                         Close Day
                     </button>
+                @else
+                    @foreach ($branchClosures as $row)
+                        @php $look = $closureLook($row['closure']); @endphp
+                        <span class="rh-close-status-badge {{ $look['badge'] }}">{{ $showBranchNames ? $row['branch_name'].' · ' : '' }}{{ $look['label'] }}</span>
+                    @endforeach
                 @endif
             </div>
         </div>
@@ -124,9 +122,12 @@
             </div>
         </div>
 
-        {{-- ── Closure status panel ──────────────────────────────────── --}}
-        @if (! empty($todayClosure))
-            <div class="rh-dash-closure {{ $closureCardClass }}" style="margin-top: 1.25rem;">
+        {{-- ── Closure status panel, one per branch ─────────────────────── --}}
+        @foreach ($branchClosures as $row)
+        @php $closure = $row['closure']; @endphp
+        @if ($closure)
+            @php $look = $closureLook($closure); $vAbs = abs((float) $closure->variance); @endphp
+            <div class="rh-dash-closure {{ $look['card'] }}" style="margin-top: {{ $loop->first ? '1.25rem' : '0.5rem' }};">
                 <div class="rh-dash-closure-left">
                     <span class="rh-dash-closure-icon">
                         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -134,32 +135,31 @@
                         </svg>
                     </span>
                     <div class="rh-dash-closure-text">
-                        <span class="rh-dash-closure-title">Day closed at {{ $todayClosure->closed_at?->format('h:i A') }}</span>
-                        <span class="rh-dash-closure-meta">{{ $todayClosure->closedBy?->name ?? 'Unknown' }} · {{ $todayClosure->branch?->name ?? '—' }}</span>
+                        <span class="rh-dash-closure-title">Day closed at {{ $closure->closed_at?->format('h:i A') }}</span>
+                        <span class="rh-dash-closure-meta">{{ $closure->closedBy?->name ?? 'Unknown' }} · {{ $row['branch_name'] }}</span>
                     </div>
                 </div>
                 <div class="rh-dash-closure-right">
                     <div class="rh-dash-closure-cell">
                         <p class="rh-dash-closure-cell-label">Counted</p>
-                        <p class="rh-dash-closure-cell-value">₱{{ number_format((float) $todayClosure->counted_cash, 0) }}</p>
+                        <p class="rh-dash-closure-cell-value">₱{{ number_format((float) $closure->counted_cash, 0) }}</p>
                     </div>
                     <div class="rh-dash-closure-cell">
                         <p class="rh-dash-closure-cell-label">Variance</p>
-                        @php $vAbs = abs((float) $todayClosure->variance); @endphp
-                        <p class="rh-dash-closure-cell-value" style="color: {{ $vAbs < 0.01 ? 'var(--rh-success-text)' : ((float) $todayClosure->variance < 0 ? 'var(--rh-error-text)' : 'var(--rh-amber-text)') }};">
+                        <p class="rh-dash-closure-cell-value" style="color: {{ $vAbs < 0.01 ? 'var(--rh-success-text)' : ((float) $closure->variance < 0 ? 'var(--rh-error-text)' : 'var(--rh-amber-text)') }};">
                             @if ($vAbs < 0.01)
                                 ₱0
-                            @elseif ((float) $todayClosure->variance < 0)
+                            @elseif ((float) $closure->variance < 0)
                                 −₱{{ number_format($vAbs, 0) }}
                             @else
-                                +₱{{ number_format((float) $todayClosure->variance, 0) }}
+                                +₱{{ number_format((float) $closure->variance, 0) }}
                             @endif
                         </p>
                     </div>
                 </div>
             </div>
         @else
-            <div class="rh-dash-closure rh-dash-closure--open" style="margin-top: 1.25rem;">
+            <div class="rh-dash-closure rh-dash-closure--open" style="margin-top: {{ $loop->first ? '1.25rem' : '0.5rem' }};">
                 <div class="rh-dash-closure-left">
                     <span class="rh-dash-closure-icon">
                         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -168,13 +168,14 @@
                         </svg>
                     </span>
                     <div class="rh-dash-closure-text">
-                        <span class="rh-dash-closure-title">Day not closed yet</span>
+                        <span class="rh-dash-closure-title">Day not closed yet{{ $showBranchNames ? ' · '.$row['branch_name'] : '' }}</span>
                         <span class="rh-dash-closure-meta">Reconcile cash, auto-clock-out staff, lock today's books</span>
                     </div>
                 </div>
-                <button type="button" class="rh-close-cta" @click="openDrawer()">Close Day Now</button>
+                <button type="button" class="rh-close-cta" @click="openDrawer({ branchId: {{ $row['branch_id'] }} })">Close Day Now</button>
             </div>
         @endif
+        @endforeach
 
         {{-- ── 7-Day Sales Trend + Payment Method ────────────────────── --}}
         <div class="rh-dash-cols rh-dash-cols--6-4" style="margin-top: 1.5rem;">
@@ -492,7 +493,9 @@
                                     <label class="rm-field-label">Branch</label>
                                     <select class="rm-input" x-model.number="selectedBranchId" @change="reloadPreview()">
                                         <template x-for="b in data.available_branches" :key="b.id">
-                                            <option :value="b.id" x-text="b.name"></option>
+                                            {{-- :selected because the options render after x-model has set
+                                                 the value, which otherwise leaves the first branch showing --}}
+                                            <option :value="b.id" :selected="b.id === selectedBranchId" x-text="b.name"></option>
                                         </template>
                                     </select>
                                 </div>

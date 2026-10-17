@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Controllers\Api\V1\Concerns\ResolvesBranch;
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
@@ -17,9 +18,13 @@ use Illuminate\Support\Facades\DB;
 
 class DayClosureController extends Controller
 {
+    use ResolvesBranch;
+
+    private const CROSS_BRANCH_DENIED = 'You cannot close another branch\'s day.';
+
     public function preview(Request $request): JsonResponse
     {
-        $branchId = (int) ($request->query('branch_id') ?: $request->user()->resolveBranchId());
+        $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
         $date = (string) ($request->query('date') ?: now()->toDateString());
 
         $branch = Branch::find($branchId);
@@ -91,10 +96,7 @@ class DayClosureController extends Controller
             'auto_clockout_attendance_ids.*' => ['integer', 'exists:attendance_records,id'],
         ]);
 
-        $branchId = (int) ($validated['branch_id'] ?? $request->user()->resolveBranchId());
-        if (! $branchId) {
-            return response()->json(['message' => 'No branch resolved.'], 422);
-        }
+        $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
 
         $existing = DayClosure::where('branch_id', $branchId)
             ->whereDate('closed_at_date', $validated['closed_at_date'])
@@ -162,7 +164,7 @@ class DayClosureController extends Controller
 
     public function history(Request $request): JsonResponse
     {
-        $branchId = (int) ($request->query('branch_id') ?: $request->user()->resolveBranchId());
+        $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
         $limit = min((int) $request->query('limit', 30), 100);
 
         $closures = DayClosure::where('branch_id', $branchId)

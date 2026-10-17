@@ -18,6 +18,13 @@ use Illuminate\View\View;
 
 class BranchController extends Controller
 {
+    /**
+     * branches.code is a VARCHAR(20) and the prefix of every order number
+     * (SaleService::generateOrderNumber), so it is held to the column width and
+     * to letters, digits, dashes and underscores.
+     */
+    private const CODE_MAX_LENGTH = 20;
+
     public function index(): View
     {
         $branches = Branch::orderBy('name')->get();
@@ -29,7 +36,7 @@ class BranchController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'code' => ['required', 'string', 'max:32', 'unique:branches,code'],
+            'code' => ['required', 'string', 'max:'.self::CODE_MAX_LENGTH, 'alpha_dash:ascii', 'unique:branches,code'],
             'name' => ['required', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:32'],
             'email' => ['nullable', 'email', 'max:255'],
@@ -66,7 +73,7 @@ class BranchController extends Controller
     public function update(Request $request, Branch $branch): RedirectResponse
     {
         $validated = $request->validate([
-            'code' => ['required', 'string', 'max:32', Rule::unique('branches', 'code')->ignore($branch->id)],
+            'code' => ['required', 'string', 'max:'.self::CODE_MAX_LENGTH, 'alpha_dash:ascii', Rule::unique('branches', 'code')->ignore($branch->id)],
             'name' => ['required', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:32'],
             'email' => ['nullable', 'email', 'max:255'],

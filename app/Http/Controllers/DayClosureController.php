@@ -34,6 +34,7 @@ class DayClosureController extends Controller
         if (! $branch) {
             return response()->json(['error' => 'Branch not found.'], 404);
         }
+        $this->authorizeBranch($request, $branchId);
 
         $existing = DayClosure::where('branch_id', $branchId)
             ->whereDate('closed_at_date', $date)
@@ -84,7 +85,7 @@ class DayClosureController extends Controller
                 'clock_in_at' => $r->clock_in_at?->toIso8601String(),
                 'clock_in_label' => $r->clock_in_at?->format('h:i A'),
             ]),
-            'available_branches' => Branch::where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'available_branches' => $this->closableBranches($request),
         ]);
     }
 
@@ -99,6 +100,7 @@ class DayClosureController extends Controller
             'auto_clockout_attendance_ids' => ['nullable', 'array'],
             'auto_clockout_attendance_ids.*' => ['integer', 'exists:attendance_records,id'],
         ]);
+        $this->authorizeBranch($request, (int) $validated['branch_id']);
 
         $existing = DayClosure::where('branch_id', $validated['branch_id'])
             ->whereDate('closed_at_date', $validated['closed_at_date'])
@@ -420,12 +422,46 @@ class DayClosureController extends Controller
         return $previous ? (float) $previous->opening_float : 0.0;
     }
 
+    /**
+     * The branch the drawer opens on: the user's own (users.branch_id, else the
+     * linked employee's). Only an owner with no branch of their own falls back to
+     * the first active one; a cashier with no branch gets 0, which 404s, rather
+     * than silently closing somebody else's till.
+     */
     private function resolveDefaultBranchId(Request $request): int
     {
-        $userBranch = $request->user()?->branch_id;
-        if ($userBranch) {
-            return (int) $userBranch;
+        $user = $request->user();
+        $ownBranchId = $user?->resolveBranchId();
+        if ($ownBranchId) {
+            return (int) $ownBranchId;
         }
+        if (! $user?->hasRole('owner')) {
+            return 0;
+        }
+
         return (int) (Branch::where('is_active', true)->orderBy('id')->value('id') ?? 0);
+    }
+
+    /** A cashier closes their own branch's day and nobody else's. */
+    private function authorizeBranch(Request $request, int $branchId): void
+    {
+        abort_unless(
+            $request->user()->canAccessBranch($branchId),
+            403,
+            'You cannot close another branch\'s day.'
+        );
+    }
+
+    /** The branch picker in the drawer: every active branch for an owner, their own for anyone else. */
+    private function closableBranches(Request $request)
+    {
+        $user = $request->user();
+        $query = Branch::where('is_active', true)->orderBy('name');
+
+        if (! $user->hasRole('owner')) {
+            $query->whereKey($user->resolveBranchId() ?? 0);
+        }
+
+        return $query->get(['id', 'name']);
     }
 }

@@ -14,11 +14,24 @@ use App\Models\Ingredient;
 use App\Models\PayrollEntry;
 use App\Models\Sale;
 use App\Models\SpecialExpense;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function index()
+    public function index(Request $request): View|RedirectResponse
     {
+        // Every figure below adds up all branches, so this is the owner's page.
+        // A cashier's job is the POS; login sends everyone here, so bounce them on.
+        $user = $request->user();
+        if (! $user->hasRole('owner')) {
+            abort_unless($user->hasRole('cashier'), 403);
+
+            return redirect('/pos/');
+        }
+
         $today = now()->toDateString();
         $monthStart = now()->startOfMonth()->toDateString();
 
@@ -153,11 +166,8 @@ class DashboardController extends Controller
             $recentExpenses->pluck('expense_category_id')->filter()->unique()
         )->pluck('name', 'id');
 
-        // ── Today's closure ───────────────────────────────────────────────
-        $todayClosure = DayClosure::whereDate('closed_at_date', $today)
-            ->with('closedBy:id,name')
-            ->orderByDesc('id')
-            ->first();
+        // ── Today's closures, one row per branch ──────────────────────────
+        $branchClosures = $this->branchClosures($today);
 
         return view('dashboard', compact(
             'activeEmployees',
@@ -189,7 +199,35 @@ class DashboardController extends Controller
             'recentSales',
             'recentExpenses',
             'expenseCategoryNames',
-            'todayClosure'
+            'branchClosures'
         ));
+    }
+
+    /**
+     * Whether each branch has closed $date. Closing is per branch: one branch
+     * signing off says nothing about another, so the dashboard lists every
+     * active branch (plus any inactive one that still closed that day).
+     *
+     * @return Collection<int, array{branch_id: int, branch_name: string, closure: ?DayClosure}>
+     */
+    private function branchClosures(string $date): Collection
+    {
+        $closures = DayClosure::whereDate('closed_at_date', $date)
+            ->with('closedBy:id,name')
+            ->orderByDesc('id')
+            ->get()
+            ->unique('branch_id')
+            ->keyBy('branch_id');
+
+        return Branch::query()
+            ->where(fn ($q) => $q->where('is_active', true)->orWhereIn('id', $closures->keys()))
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (Branch $branch) => [
+                'branch_id' => (int) $branch->id,
+                'branch_name' => $branch->name,
+                'closure' => $closures->get($branch->id),
+            ])
+            ->values();
     }
 }

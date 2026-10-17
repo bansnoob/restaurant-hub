@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
 use App\Models\Employee;
+use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -14,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
 class EmployeeController extends Controller
@@ -80,9 +82,9 @@ class EmployeeController extends Controller
         return view('modules.employees.index', compact('branches', 'employees', 'stats', 'filters'));
     }
 
-    public function show(Employee $employee): JsonResponse
+    public function show(Request $request, Employee $employee): JsonResponse
     {
-        $employee->load('branch');
+        $employee->load(['branch', 'user:id,email']);
 
         $thirtyDaysAgo = Carbon::today()->subDays(29)->toDateString();
         $today = Carbon::today()->toDateString();
@@ -176,7 +178,38 @@ class EmployeeController extends Controller
                 'hours_worked' => round($totalMinutes / 60, 1),
             ],
             'payroll_history' => $payrollHistory,
+            // Owner-only: whether this employee can sign in to the POS, and as whom.
+            'login' => $request->user()->hasRole('owner') && $employee->user
+                ? ['email' => $employee->user->email]
+                : null,
         ]);
+    }
+
+    public function storeLogin(Request $request, Employee $employee): RedirectResponse
+    {
+        if ($employee->user_id !== null) {
+            return back()->with('error', 'This employee already has a login.');
+        }
+
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ]);
+
+        DB::transaction(function () use ($employee, $validated) {
+            // branch_id stays null on purpose: the login follows the employee's branch.
+            $user = User::create([
+                'name' => trim($employee->first_name.' '.$employee->last_name),
+                'email' => $validated['email'],
+                'password' => $validated['password'],
+                'branch_id' => null,
+            ]);
+            $user->assignRole('cashier');
+
+            $employee->update(['user_id' => $user->id]);
+        });
+
+        return back()->with('success', "POS login created for {$employee->first_name}.");
     }
 
     public function store(Request $request): RedirectResponse

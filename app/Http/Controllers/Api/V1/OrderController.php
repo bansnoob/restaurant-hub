@@ -4,23 +4,30 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Controllers\Api\V1\Concerns\ResolvesBranch;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\SaleResource;
+use App\Models\MenuItem;
 use App\Models\Sale;
 use App\Services\SaleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
+    use ResolvesBranch;
+
+    private const CROSS_BRANCH_DENIED = 'You cannot place an order for another branch.';
+
     public function __construct(
         private readonly SaleService $saleService,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        $branchId = $this->resolveBranchId($request);
+        $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
 
         $query = Sale::where('branch_id', $branchId)
             ->with('saleItems')
@@ -50,8 +57,9 @@ class OrderController extends Controller
             'items.*.notes' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $branchId = $validated['branch_id'] ?? $this->resolveBranchId($request);
+        $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
         $validated['branch_id'] = $branchId;
+        $this->assertItemsOnBranchMenu($validated['items'], $branchId);
 
         $sale = $this->saleService->createOrder($validated, $request->user());
 
@@ -102,18 +110,32 @@ class OrderController extends Controller
         return new SaleResource($sale->load('saleItems'));
     }
 
-    private function resolveBranchId(Request $request): int
+    /**
+     * Every line must come from the order's own branch menu. The iPad rings up
+     * whatever menu it last cached, so after a branch switch it can send another
+     * branch's item ids; booking them would put that branch's items and prices
+     * into this branch's sales.
+     *
+     * @param  array<int, array{menu_item_id: int|string}>  $items
+     */
+    private function assertItemsOnBranchMenu(array $items, int $branchId): void
     {
-        $user = $request->user();
+        $onMenu = MenuItem::where('branch_id', $branchId)
+            ->whereIn('id', array_column($items, 'menu_item_id'))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
 
-        if ($user->hasRole('owner') && $request->filled('branch_id')) {
-            return $request->integer('branch_id');
+        $errors = [];
+        foreach ($items as $index => $item) {
+            if (! in_array((int) $item['menu_item_id'], $onMenu, true)) {
+                $errors["items.{$index}.menu_item_id"] = ["This item is not on this branch's menu. Refresh the menu and try again."];
+            }
         }
 
-        $branchId = $user->resolveBranchId();
-        abort_unless($branchId, 403, 'User is not linked to any branch.');
-
-        return $branchId;
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     private function authorizeBranchAccess(Request $request, Sale $sale): void
