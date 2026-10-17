@@ -76,8 +76,9 @@ class CashReportService
             //   cash_on_hand = net taken - paid_outside_total
             //   cash_expenses_total = the day rows' own Cash Exp. column
             'cash_on_hand' => round($netTaken - $paidOutside, 2),
-            // Reported once, beside the total rather than inside it.
-            'float_in_till' => round((float) ($closed->sortByDesc('date')->first()['opening_float'] ?? 0), 2),
+            // Reported once, beside the total rather than inside it: each till's latest
+            // float, added up, so two branches' change funds are both in it.
+            'float_in_till' => round((float) $closed->sortByDesc('date')->unique('branch_id')->sum('opening_float'), 2),
             'paid_outside_total' => round($paidOutside, 2),
             'expected_total' => round((float) $rows->sum('expected_cash'), 2),
             'variance_total' => round((float) $closed->sum('variance'), 2),
