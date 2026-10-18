@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
 use App\Models\DayClosure;
@@ -25,10 +26,12 @@ use Illuminate\View\View;
 
 class DayClosureController extends Controller
 {
+    use ReadsQueryFilters;
+
     public function preview(Request $request): JsonResponse
     {
-        $branchId = (int) ($request->query('branch_id') ?: $this->resolveDefaultBranchId($request));
-        $date = (string) ($request->query('date') ?: now()->toDateString());
+        $branchId = (int) ($this->queryValue($request, 'branch_id') ?: $this->resolveDefaultBranchId($request));
+        $date = $this->queryDate($request, 'date', now()->toDateString());
 
         $branch = Branch::find($branchId);
         if (! $branch) {
@@ -175,9 +178,9 @@ class DayClosureController extends Controller
 
     public function index(Request $request, CashReportService $cashReport, SpecialExpenseOptions $options): View
     {
-        $branchFilter = $request->query('branch_id');
-        $dateFrom = $request->string('date_from')->toString() ?: now()->subDays(29)->toDateString();
-        $dateTo = $request->string('date_to')->toString() ?: now()->toDateString();
+        $branchFilter = $this->queryValue($request, 'branch_id');
+        $dateFrom = $this->queryDate($request, 'date_from', now()->subDays(29)->toDateString());
+        $dateTo = $this->queryDate($request, 'date_to', now()->toDateString());
         $branchId = (! empty($branchFilter) && is_numeric($branchFilter)) ? (int) $branchFilter : null;
 
         $branches = Branch::where('is_active', true)->orderBy('name')->get();

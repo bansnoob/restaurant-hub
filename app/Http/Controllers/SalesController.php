@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Models\Branch;
 use App\Models\MenuCategory;
 use App\Models\Sale;
@@ -17,6 +18,8 @@ use Illuminate\View\View;
 
 class SalesController extends Controller
 {
+    use ReadsQueryFilters;
+
     private const ORDER_TYPES = ['dine_in', 'takeout', 'delivery'];
 
     private const STATUSES = ['completed', 'open', 'voided', 'refunded'];
@@ -25,13 +28,13 @@ class SalesController extends Controller
 
     public function index(Request $request): View
     {
-        $preset = (string) $request->query('preset', '');
+        $preset = $this->queryValue($request, 'preset');
         [$dateFrom, $dateTo] = $this->resolveRange($request, $preset);
 
-        $branchFilter = $request->query('branch_id');
+        $branchFilter = $this->queryValue($request, 'branch_id');
         $statusFilter = (array) $request->query('statuses', []);
-        $paymentFilter = (string) $request->query('payment_method', '');
-        $search = trim((string) $request->query('search', ''));
+        $paymentFilter = $this->queryValue($request, 'payment_method');
+        $search = trim($this->queryValue($request, 'search'));
 
         $statusFilter = array_values(array_intersect(self::STATUSES, $statusFilter));
         $branchId = (! empty($branchFilter) && is_numeric($branchFilter)) ? (int) $branchFilter : null;
@@ -51,7 +54,7 @@ class SalesController extends Controller
         // the same while each filters to its own branch's slice: label them.
         $labelCategoryBranches = $branchId === null && $branches->count() > 1;
 
-        $categoryFilter = $request->query('category_id');
+        $categoryFilter = $this->queryValue($request, 'category_id');
         $categoryId = (! empty($categoryFilter) && is_numeric($categoryFilter)
             && $categories->contains('id', (int) $categoryFilter))
             ? (int) $categoryFilter
@@ -381,8 +384,8 @@ class SalesController extends Controller
             case 'month':
                 return [now()->startOfMonth()->toDateString(), $today];
             default:
-                $from = $request->string('date_from')->toString() ?: now()->startOfMonth()->toDateString();
-                $to = $request->string('date_to')->toString() ?: $today;
+                $from = $this->queryDate($request, 'date_from', now()->startOfMonth()->toDateString());
+                $to = $this->queryDate($request, 'date_to', $today);
                 if (Carbon::parse($from)->gt(Carbon::parse($to))) {
                     [$from, $to] = [$to, $from];
                 }

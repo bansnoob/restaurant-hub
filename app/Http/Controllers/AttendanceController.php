@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Exceptions\AttendanceException;
 use App\Models\AttendanceRecord;
 use App\Models\Employee;
@@ -20,16 +21,18 @@ use Illuminate\View\View;
 
 class AttendanceController extends Controller
 {
+    use ReadsQueryFilters;
+
     public function __construct(
         private readonly AttendanceService $attendanceService,
     ) {}
 
     public function index(Request $request): View
     {
-        $workDate = $request->string('work_date')->toString() ?: now()->toDateString();
-        $dateFrom = $request->string('date_from')->toString() ?: now()->startOfWeek()->toDateString();
-        $dateTo = $request->string('date_to')->toString() ?: now()->endOfWeek()->toDateString();
-        $branchFilter = $request->query('branch_id');
+        $workDate = $this->queryDate($request, 'work_date', now()->toDateString());
+        $dateFrom = $this->queryDate($request, 'date_from', now()->startOfWeek()->toDateString());
+        $dateTo = $this->queryDate($request, 'date_to', now()->endOfWeek()->toDateString());
+        $branchFilter = $this->queryValue($request, 'branch_id');
 
         $employees = Employee::where('is_active', true)
             ->with('branch')

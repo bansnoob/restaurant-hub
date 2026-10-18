@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Models\Branch;
 use App\Models\SpecialExpense;
 use App\Models\SpecialExpenseCategory;
@@ -30,6 +31,8 @@ use Illuminate\View\View;
  */
 class SpecialExpenseController extends Controller
 {
+    use ReadsQueryFilters;
+
     private const PAYMENT_METHODS = SpecialExpense::PAYMENT_METHODS;
 
     /** How many months back the month picker offers. */
@@ -38,19 +41,22 @@ class SpecialExpenseController extends Controller
         $month = $this->resolveMonth($request);
         $monthStart = Carbon::parse($month)->startOfMonth();
 
-        $branchFilter = $request->query('branch_id');
-        $categoryFilter = $request->query('special_expense_category_id');
+        $branchFilter = $this->queryValue($request, 'branch_id');
+        $categoryFilter = $this->queryValue($request, 'special_expense_category_id');
 
+        // Table-qualified because categoryBreakdown() joins special_expense_categories
+        // onto a clone of this query. That table has no branch_id today, but a bare
+        // column here is exactly how the Expenses page's branch filter became a 500.
         $base = SpecialExpense::query()->forMonth($monthStart);
 
         if (! empty($branchFilter) && is_numeric($branchFilter)) {
-            $base->where('branch_id', (int) $branchFilter);
+            $base->where('special_expenses.branch_id', (int) $branchFilter);
         }
 
         $listQuery = clone $base;
 
         if (! empty($categoryFilter) && is_numeric($categoryFilter)) {
-            $listQuery->where('special_expense_category_id', (int) $categoryFilter);
+            $listQuery->where('special_expenses.special_expense_category_id', (int) $categoryFilter);
         }
 
         $specialExpenses = $options

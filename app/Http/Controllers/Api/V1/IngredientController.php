@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Api\V1\Concerns\ResolvesBranch;
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\IngredientDetailResource;
 use App\Http\Resources\V1\IngredientResource;
@@ -21,7 +22,7 @@ use Illuminate\Validation\Rule;
 
 class IngredientController extends Controller
 {
-    use ResolvesBranch;
+    use ResolvesBranch, ReadsQueryFilters;
 
     private const MODIFY_DENIED = 'You cannot modify an ingredient from another branch.';
 
@@ -52,8 +53,8 @@ class IngredientController extends Controller
         ]);
 
         $views = $this->inventory->listIngredients($this->resolveBranchId($request), [
-            'search' => (string) $request->query('search', ''),
-            'unit' => (string) $request->query('unit', ''),
+            'search' => $this->queryValue($request, 'search'),
+            'unit' => $this->queryValue($request, 'unit'),
             'category_id' => $this->categoryFilter($request),
             'low_only' => $request->boolean('low_only'),
             'include_inactive' => $request->boolean('include_inactive'),
@@ -226,7 +227,12 @@ class IngredientController extends Controller
             return;
         }
 
-        $sku = trim((string) $request->input('sku'));
+        $sku = $request->input('sku');
+        if (! is_string($sku)) {
+            return; // Not a string: leave it for the `string` rule to refuse.
+        }
+
+        $sku = trim($sku);
         $request->merge(['sku' => $sku === '' ? null : $sku]);
     }
 
@@ -236,7 +242,7 @@ class IngredientController extends Controller
      */
     private function categoryFilter(Request $request): int|string|null
     {
-        $raw = trim((string) $request->query('category_id', ''));
+        $raw = trim($this->queryValue($request, 'category_id'));
 
         if ($raw === '') {
             return null;

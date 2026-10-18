@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Models\Branch;
 use App\Models\Expense;
 use App\Services\DayClosureRecalculator;
@@ -18,46 +19,51 @@ use Illuminate\View\View;
 
 class ExpenseController extends Controller
 {
+    use ReadsQueryFilters;
+
     public function __construct(private readonly DayClosureRecalculator $recalculator) {}
 
     private const PAYMENT_METHODS = ['cash', 'bank_transfer', 'gcash', 'other'];
 
     public function index(Request $request): View
     {
-        $preset = (string) $request->query('preset', '');
+        $preset = $this->queryValue($request, 'preset');
         [$dateFrom, $dateTo] = $this->resolveRange($request, $preset);
 
-        $branchFilter = $request->query('branch_id');
-        $categoryFilter = $request->query('expense_category_id');
-        $paymentFilter = (string) $request->query('payment_method', '');
-        $search = trim((string) $request->query('search', ''));
+        $branchFilter = $this->queryValue($request, 'branch_id');
+        $categoryFilter = $this->queryValue($request, 'expense_category_id');
+        $paymentFilter = $this->queryValue($request, 'payment_method');
+        $search = trim($this->queryValue($request, 'search'));
 
         $branches = Branch::where('is_active', true)->orderBy('name')->get();
         $categories = ExpenseCategory::where('is_active', true)->orderBy('name')->get();
 
+        // Columns are table-qualified: categoryBreakdown() joins expense_categories,
+        // which has its own branch_id, and a bare `branch_id` there made every
+        // branch-filtered page a 500 (ambiguous column).
         $base = Expense::query()
-            ->whereDate('expense_date', '>=', $dateFrom)
-            ->whereDate('expense_date', '<=', $dateTo)
-            ->where('status', 'approved');
+            ->whereDate('expenses.expense_date', '>=', $dateFrom)
+            ->whereDate('expenses.expense_date', '<=', $dateTo)
+            ->where('expenses.status', 'approved');
 
-        if (! empty($branchFilter) && is_numeric($branchFilter)) {
-            $base->where('branch_id', (int) $branchFilter);
+        if ($branchFilter !== '' && is_numeric($branchFilter)) {
+            $base->where('expenses.branch_id', (int) $branchFilter);
         }
 
         $listQuery = (clone $base);
 
-        if (! empty($categoryFilter) && is_numeric($categoryFilter)) {
-            $listQuery->where('expense_category_id', (int) $categoryFilter);
+        if ($categoryFilter !== '' && is_numeric($categoryFilter)) {
+            $listQuery->where('expenses.expense_category_id', (int) $categoryFilter);
         }
         if (in_array($paymentFilter, self::PAYMENT_METHODS, true)) {
-            $listQuery->where('payment_method', $paymentFilter);
+            $listQuery->where('expenses.payment_method', $paymentFilter);
         }
         if ($search !== '') {
             $needle = '%'.$search.'%';
             $listQuery->where(function ($q) use ($needle) {
-                $q->where('description', 'like', $needle)
-                  ->orWhere('vendor_name', 'like', $needle)
-                  ->orWhere('reference_no', 'like', $needle);
+                $q->where('expenses.description', 'like', $needle)
+                  ->orWhere('expenses.vendor_name', 'like', $needle)
+                  ->orWhere('expenses.reference_no', 'like', $needle);
             });
         }
 
@@ -329,8 +335,8 @@ class ExpenseController extends Controller
             case 'month':
                 return [now()->startOfMonth()->toDateString(), $today];
             default:
-                $from = $request->string('date_from')->toString() ?: now()->startOfMonth()->toDateString();
-                $to = $request->string('date_to')->toString() ?: $today;
+                $from = $this->dateOr($this->queryValue($request, 'date_from'), now()->startOfMonth()->toDateString());
+                $to = $this->dateOr($this->queryValue($request, 'date_to'), $today);
                 if (Carbon::parse($from)->gt(Carbon::parse($to))) {
                     [$from, $to] = [$to, $from];
                 }

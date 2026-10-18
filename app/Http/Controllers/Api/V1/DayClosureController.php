@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Api\V1\Concerns\ResolvesBranch;
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
@@ -17,14 +18,14 @@ use Illuminate\Support\Facades\DB;
 
 class DayClosureController extends Controller
 {
-    use ResolvesBranch;
+    use ResolvesBranch, ReadsQueryFilters;
 
     private const CROSS_BRANCH_DENIED = 'You cannot close another branch\'s day.';
 
     public function preview(Request $request): JsonResponse
     {
         $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
-        $date = (string) ($request->query('date') ?: now()->toDateString());
+        $date = $this->queryDate($request, 'date', now()->toDateString());
 
         $branch = Branch::find($branchId);
         if (! $branch) {
@@ -164,7 +165,7 @@ class DayClosureController extends Controller
     public function history(Request $request): JsonResponse
     {
         $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
-        $limit = min((int) $request->query('limit', 30), 100);
+        $limit = min((int) ($this->queryValue($request, 'limit') ?: 30), 100);
 
         $closures = DayClosure::where('branch_id', $branchId)
             ->orderByDesc('closed_at_date')
