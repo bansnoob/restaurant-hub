@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\IngredientCategory;
@@ -35,6 +36,8 @@ use Illuminate\View\View;
  */
 class InventoryController extends Controller
 {
+    use ReadsQueryFilters;
+
     private const UNITS = InventoryService::UNITS;
 
     /**
@@ -60,16 +63,16 @@ class InventoryController extends Controller
     {
         $branches = Branch::where('is_active', true)->orderBy('name')->get();
 
-        $branchFilter = $request->query('branch_id');
+        $branchFilter = $this->queryValue($request, 'branch_id');
         $branchId = $this->branchId($branchFilter);
-        $unitFilter = (string) $request->query('unit', '');
-        $search = trim((string) $request->query('search', ''));
+        $unitFilter = $this->queryValue($request, 'unit');
+        $search = trim($this->queryValue($request, 'search'));
         $lowOnly = (bool) $request->query('low_only', false);
 
         // Inactive categories are loaded too: the manager drawer is the only
         // place they are reachable, and the pickers filter them out client-side.
         $categories = $this->inventory->listCategories($branchId, includeInactive: true);
-        $categoryFilter = $this->categoryFilter($request->query('category_id'), $categories);
+        $categoryFilter = $this->categoryFilter($this->queryValue($request, 'category_id'), $categories);
 
         // `include_inactive` is deliberately absent: the web index lists active
         // and inactive ingredients together, as it always has.

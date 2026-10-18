@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Api\V1\Concerns\ResolvesBranch;
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\SaleResource;
 use App\Models\MenuItem;
@@ -17,7 +18,7 @@ use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
-    use ResolvesBranch;
+    use ResolvesBranch, ReadsQueryFilters;
 
     private const CROSS_BRANCH_DENIED = 'You cannot place an order for another branch.';
 
@@ -34,10 +35,10 @@ class OrderController extends Controller
             ->orderByDesc('sale_datetime');
 
         if ($request->filled('status')) {
-            $query->where('status', $request->string('status'));
+            $query->where('status', $this->queryValue($request, 'status'));
         }
 
-        $date = $request->string('date')->toString() ?: now()->toDateString();
+        $date = $this->queryDate($request, 'date', now()->toDateString());
         $query->whereDate('sale_datetime', $date);
 
         return SaleResource::collection($query->paginate(50));

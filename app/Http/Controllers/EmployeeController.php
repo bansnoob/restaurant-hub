@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
 use App\Models\Employee;
@@ -20,14 +21,16 @@ use Illuminate\View\View;
 
 class EmployeeController extends Controller
 {
+    use ReadsQueryFilters;
+
     public function index(Request $request): View
     {
         $branches = Branch::where('is_active', true)->orderBy('name')->get();
 
-        $search = trim((string) $request->query('search', ''));
-        $branchId = $request->query('branch_id');
+        $search = trim($this->queryValue($request, 'search'));
+        $branchId = $this->queryValue($request, 'branch_id');
         $types = (array) $request->query('types', []);
-        $activeFilter = $request->query('active', 'all'); // all|active|inactive
+        $activeFilter = $this->queryValue($request, 'active', 'all'); // all|active|inactive
 
         $query = Employee::query()->with('branch');
 

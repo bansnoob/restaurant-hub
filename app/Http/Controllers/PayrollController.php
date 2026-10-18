@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
 use App\Models\Employee;
@@ -25,6 +26,8 @@ use Illuminate\View\View;
 
 class PayrollController extends Controller
 {
+    use ReadsQueryFilters;
+
     /**
      * Where finalized wages are filed. Created on first use rather than seeded, so
      * an install that already has an owner-made "Weekly Salary" reuses it.
@@ -40,9 +43,9 @@ class PayrollController extends Controller
             ->orderBy('first_name')
             ->get();
 
-        $branchFilter = $request->query('branch_id');
-        $statusFilter = (string) $request->query('status', '');
-        $search = trim((string) $request->query('search', ''));
+        $branchFilter = $this->queryValue($request, 'branch_id');
+        $statusFilter = $this->queryValue($request, 'status');
+        $search = trim($this->queryValue($request, 'search'));
 
         $reportsQuery = PayrollEntry::query()
             ->with(['employee.branch', 'payrollPeriod.branch'])

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Models\Branch;
 use App\Models\Expense;
 use App\Services\DayClosureRecalculator;
@@ -18,6 +19,8 @@ use Illuminate\View\View;
 
 class ExpenseController extends Controller
 {
+    use ReadsQueryFilters;
+
     public function __construct(private readonly DayClosureRecalculator $recalculator) {}
 
     private const PAYMENT_METHODS = ['cash', 'bank_transfer', 'gcash', 'other'];
@@ -338,32 +341,6 @@ class ExpenseController extends Controller
                     [$from, $to] = [$to, $from];
                 }
                 return [$from, $to];
-        }
-    }
-
-    /**
-     * A filter value from the query string, or '' when it is missing or not a plain
-     * string. A hand-edited URL (?branch_id[]=1) would otherwise be a 500 the moment
-     * the value is cast or printed back into the filter form.
-     */
-    private function queryValue(Request $request, string $key): string
-    {
-        $value = $request->query($key);
-
-        return is_string($value) ? $value : '';
-    }
-
-    /** $value as a Y-m-d date, or $fallback when it is empty or not a date. */
-    private function dateOr(string $value, string $fallback): string
-    {
-        if ($value === '') {
-            return $fallback;
-        }
-
-        try {
-            return Carbon::parse($value)->toDateString();
-        } catch (\Throwable) {
-            return $fallback;
         }
     }
 

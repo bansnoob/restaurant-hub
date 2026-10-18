@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Api\V1\Concerns\ResolvesBranch;
+use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\ExpenseCategoryResource;
 use App\Http\Resources\V1\ExpenseResource;
@@ -18,7 +19,7 @@ use Illuminate\Validation\Rule;
 
 class ExpenseController extends Controller
 {
-    use ResolvesBranch;
+    use ResolvesBranch, ReadsQueryFilters;
 
     private const CROSS_BRANCH_DENIED = 'You cannot record an expense for another branch.';
 
@@ -30,7 +31,7 @@ class ExpenseController extends Controller
     {
         $branchId = $this->resolveBranchId($request, self::CROSS_BRANCH_DENIED);
 
-        $date = $request->string('date')->toString() ?: now()->toDateString();
+        $date = $this->queryDate($request, 'date', now()->toDateString());
 
         $expenses = Expense::where('branch_id', $branchId)
             ->whereDate('expense_date', $date)
