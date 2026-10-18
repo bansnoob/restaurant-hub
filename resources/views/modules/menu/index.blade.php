@@ -29,6 +29,15 @@
             <p class="rm-page-sub">{{ $branchName }} menu · {{ $categories->sum('menu_items_count') }} items across {{ $categories->count() }} categories</p>
         </div>
         <div class="rm-topbar-actions">
+            {{-- Which branch's menu this is. Picking one never changes your own branch
+                 (Branches → Use this branch), which is where your POS sales go. --}}
+            <form method="GET" action="{{ route('menu.index') }}">
+                <select name="branch_id" class="rh-sal-select" aria-label="Branch" onchange="this.form.submit()">
+                    @foreach ($branches as $branch)
+                        <option value="{{ $branch->id }}" {{ (int) $branch->id === $branchId ? 'selected' : '' }}>{{ $branch->name }}</option>
+                    @endforeach
+                </select>
+            </form>
             <button type="button" class="rm-btn rm-btn--ghost" @click="openCategoryForm()">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg>
                 Category
@@ -44,7 +53,7 @@
     <div class="rm-cat-strip">
         <div class="rm-cat-track">
             @foreach($categories as $cat)
-                <a href="{{ route('menu.index', ['category' => $cat->id]) }}"
+                <a href="{{ route('menu.index', ['branch_id' => $branchId, 'category' => $cat->id]) }}"
                    class="rm-cat-pill {{ $cat->id === $activeCategoryId ? 'rm-cat-pill--on' : '' }} {{ !$cat->is_active ? 'rm-cat-pill--dim' : '' }}">
                     <span class="rm-cat-pill-name">{{ $cat->name }}</span>
                     <span class="rm-cat-pill-count">{{ $cat->menu_items_count }}</span>
@@ -129,6 +138,7 @@
                 </div>
                 <form :action="editCat ? '{{ url('menu/categories') }}/' + editCat.id : '{{ route('menu.categories.store') }}'" method="POST" class="rm-drawer-body">
                     @csrf
+                    <input type="hidden" name="branch_id" value="{{ $branchId }}">
                     <template x-if="editCat"><input type="hidden" name="_method" value="PUT"></template>
 
                     <label class="rm-field">
@@ -170,6 +180,7 @@
                 </div>
                 <form :action="editItem ? '{{ url('menu/items') }}/' + editItem.id : '{{ route('menu.items.store') }}'" method="POST" class="rm-drawer-body">
                     @csrf
+                    <input type="hidden" name="branch_id" value="{{ $branchId }}">
                     <template x-if="editItem"><input type="hidden" name="_method" value="PUT"></template>
 
                     <label class="rm-field">

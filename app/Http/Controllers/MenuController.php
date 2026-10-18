@@ -20,12 +20,9 @@ class MenuController extends Controller
 {
     public function index(Request $request): View
     {
-        $user = $request->user();
-        $branchId = $user->resolveBranchId();
+        $branch = $this->viewedBranch($request);
 
-        abort_unless($branchId, 403, 'User is not linked to any branch.');
-
-        $categories = MenuCategory::where('branch_id', $branchId)
+        $categories = MenuCategory::where('branch_id', $branch->id)
             ->withCount('menuItems')
             ->orderBy('sort_order')
             ->get();
@@ -33,17 +30,25 @@ class MenuController extends Controller
         $activeCategoryId = $request->integer('category')
             ?: ($categories->first()?->id ?? 0);
 
-        $items = MenuItem::where('branch_id', $branchId)
+        $items = MenuItem::where('branch_id', $branch->id)
             ->when($activeCategoryId, fn ($q) => $q->where('category_id', $activeCategoryId))
             ->orderBy('name')
             ->get();
+
+        // Active branches, plus the one being viewed if it has since been deactivated,
+        // so the picker never silently shows a different branch from the page.
+        $branches = Branch::where('is_active', true)
+            ->orWhere('id', $branch->id)
+            ->orderBy('name')
+            ->get(['id', 'name']);
 
         return view('modules.menu.index', [
             'categories' => $categories,
             'items' => $items,
             'activeCategoryId' => $activeCategoryId,
-            'branchId' => $branchId,
-            'branchName' => Branch::find($branchId)?->name,
+            'branchId' => (int) $branch->id,
+            'branchName' => $branch->name,
+            'branches' => $branches,
         ]);
     }
 
@@ -51,7 +56,7 @@ class MenuController extends Controller
 
     public function storeCategory(Request $request): RedirectResponse
     {
-        $branchId = $this->ownBranchId($request);
+        $branchId = $this->targetBranchId($request);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -68,7 +73,7 @@ class MenuController extends Controller
             'is_active' => true,
         ]);
 
-        return redirect()->route('menu.index')
+        return redirect()->route('menu.index', ['branch_id' => $branchId])
             ->with('success', 'Category created.');
     }
 
@@ -88,7 +93,7 @@ class MenuController extends Controller
             'is_active' => $request->boolean('is_active'),
         ]);
 
-        return redirect()->route('menu.index', ['category' => $category->id])
+        return redirect()->route('menu.index', ['branch_id' => $category->branch_id, 'category' => $category->id])
             ->with('success', 'Category updated.');
     }
 
@@ -100,9 +105,10 @@ class MenuController extends Controller
             return back()->with('error', "Cannot delete \"{$category->name}\" — it has {$itemCount} item(s). Move or delete them first.");
         }
 
+        $branchId = $category->branch_id;
         $category->delete();
 
-        return redirect()->route('menu.index')
+        return redirect()->route('menu.index', ['branch_id' => $branchId])
             ->with('success', 'Category deleted.');
     }
 
@@ -110,7 +116,7 @@ class MenuController extends Controller
 
     public function storeItem(Request $request): RedirectResponse
     {
-        $branchId = $this->ownBranchId($request);
+        $branchId = $this->targetBranchId($request);
 
         $validated = $request->validate([
             'category_id' => ['required', 'integer', $this->categoryOnBranch($branchId)],
@@ -131,13 +137,13 @@ class MenuController extends Controller
             'sku' => $sku,
             'name' => $validated['name'],
             'slug' => Str::slug($validated['name']),
-            'description' => $validated['description'],
+            'description' => $validated['description'] ?? null,
             'base_price' => $validated['base_price'],
             'tax_rate' => 0,
             'is_active' => true,
         ]);
 
-        return redirect()->route('menu.index', ['category' => $validated['category_id']])
+        return redirect()->route('menu.index', ['branch_id' => $branchId, 'category' => $validated['category_id']])
             ->with('success', 'Item created.');
     }
 
@@ -156,27 +162,63 @@ class MenuController extends Controller
             'category_id' => $validated['category_id'],
             'name' => $validated['name'],
             'slug' => Str::slug($validated['name']),
-            'description' => $validated['description'],
+            'description' => $validated['description'] ?? null,
             'base_price' => $validated['base_price'],
             'is_active' => $request->boolean('is_active'),
         ]);
 
-        return redirect()->route('menu.index', ['category' => $validated['category_id']])
+        return redirect()->route('menu.index', ['branch_id' => $item->branch_id, 'category' => $validated['category_id']])
             ->with('success', 'Item updated.');
     }
 
     public function destroyItem(MenuItem $item): RedirectResponse
     {
         $categoryId = $item->category_id;
+        $branchId = $item->branch_id;
         $item->delete();
 
-        return redirect()->route('menu.index', ['category' => $categoryId])
+        return redirect()->route('menu.index', ['branch_id' => $branchId, 'category' => $categoryId])
             ->with('success', 'Item deleted.');
     }
 
     // ── Helpers ───────────────────────────────────────────────
 
-    /** The menu being edited is the owner's own branch's; there is none without one. */
+    /**
+     * The branch whose menu the tab shows: the one picked (?branch_id=), else the
+     * owner's own, else the first active one. Picking never changes the owner's own
+     * branch, which also decides where their POS sales go.
+     */
+    private function viewedBranch(Request $request): Branch
+    {
+        if ($request->filled('branch_id')) {
+            return Branch::findOrFail($request->integer('branch_id'));
+        }
+
+        $ownBranchId = $request->user()->resolveBranchId();
+        $branch = $ownBranchId ? Branch::find($ownBranchId) : null;
+        $branch ??= Branch::where('is_active', true)->orderBy('name')->first();
+        abort_unless($branch, 404, 'Create a branch first.');
+
+        return $branch;
+    }
+
+    /**
+     * The branch a new category or item is added to: the one the page was showing,
+     * posted as branch_id. A page from before the picker posts none, and that page
+     * was showing the owner's own branch.
+     */
+    private function targetBranchId(Request $request): int
+    {
+        if ($request->filled('branch_id')) {
+            $request->validate(['branch_id' => ['integer', 'exists:branches,id']]);
+
+            return $request->integer('branch_id');
+        }
+
+        return $this->ownBranchId($request);
+    }
+
+    /** The owner's own branch; there is none without one. */
     private function ownBranchId(Request $request): int
     {
         $branchId = $request->user()->resolveBranchId();
