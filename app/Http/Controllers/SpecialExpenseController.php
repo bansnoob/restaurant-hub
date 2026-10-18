@@ -41,16 +41,19 @@ class SpecialExpenseController extends Controller
         $branchFilter = $request->query('branch_id');
         $categoryFilter = $request->query('special_expense_category_id');
 
+        // Table-qualified because categoryBreakdown() joins special_expense_categories
+        // onto a clone of this query. That table has no branch_id today, but a bare
+        // column here is exactly how the Expenses page's branch filter became a 500.
         $base = SpecialExpense::query()->forMonth($monthStart);
 
         if (! empty($branchFilter) && is_numeric($branchFilter)) {
-            $base->where('branch_id', (int) $branchFilter);
+            $base->where('special_expenses.branch_id', (int) $branchFilter);
         }
 
         $listQuery = clone $base;
 
         if (! empty($categoryFilter) && is_numeric($categoryFilter)) {
-            $listQuery->where('special_expense_category_id', (int) $categoryFilter);
+            $listQuery->where('special_expenses.special_expense_category_id', (int) $categoryFilter);
         }
 
         $specialExpenses = $options
