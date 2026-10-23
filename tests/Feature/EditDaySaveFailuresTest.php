@@ -128,6 +128,17 @@ class EditDaySaveFailuresTest extends TestCase
         $this->assertSame($this->ice->expense_category_id, $this->ice->fresh()->expense_category_id);
     }
 
+    public function test_the_browser_refuses_a_blank_or_long_description_before_sending(): void
+    {
+        $html = $this->actingAs($this->owner)->get(route('day-closures.index'))->assertOk()->getContent();
+
+        // Stops the submit in the browser, so the drawer stays open with the edits.
+        $this->assertMatchesRegularExpression(
+            '/placeholder="Description" required maxlength="200"\s+:name="\'expenses\[\' \+ i \+ \'\]\[description\]\'"/',
+            $html
+        );
+    }
+
     public function test_the_category_options_select_the_rows_saved_category(): void
     {
         $html = $this->actingAs($this->owner)->get(route('day-closures.index'))->assertOk()->getContent();

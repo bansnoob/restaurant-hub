@@ -329,12 +329,14 @@
                                         <template x-for="(row, i) in expenses" :key="i">
                                             <tr>
                                                 <td>
-                                                    <input type="text" class="rm-input" placeholder="Description"
+                                                    {{-- required/maxlength stop a refused save in the browser, so the
+                                                         drawer stays open with the edits; the server checks the same. --}}
+                                                    <input type="text" class="rm-input" placeholder="Description" required maxlength="200"
                                                            :name="'expenses[' + i + '][description]'" x-model="row.description">
                                                     {{-- Vendor and category have to be submitted, not merely displayed:
                                                          this form posts every row on the day, so a field it leaves out is
                                                          written back as null on rows nobody touched. --}}
-                                                    <input type="text" class="rm-input rh-cash-edit-sub" placeholder="Vendor (optional)"
+                                                    <input type="text" class="rm-input rh-cash-edit-sub" placeholder="Vendor (optional)" maxlength="140"
                                                            :name="'expenses[' + i + '][vendor_name]'" x-model="row.vendor_name">
                                                     <input type="hidden" :name="'expenses[' + i + '][id]'" :value="row.id || ''">
                                                 </td>
@@ -351,7 +353,7 @@
                                                     </select>
                                                 </td>
                                                 <td style="width:9rem;">
-                                                    <input type="number" step="0.01" min="0" class="rm-input"
+                                                    <input type="number" step="0.01" min="0" class="rm-input" required
                                                            :name="'expenses[' + i + '][amount]'" x-model.number="row.amount">
                                                 </td>
                                                 <td style="width:8rem;">
