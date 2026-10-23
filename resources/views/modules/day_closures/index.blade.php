@@ -22,6 +22,11 @@
         @if (session('error'))
             <div class="rm-toast rm-toast--err" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 4000)"><span>{{ session('error') }}</span></div>
         @endif
+        {{-- Validation errors from Edit Day and the special-expense form. Without this a
+             refused save looked like the page simply reloading. --}}
+        @if ($errors->any())
+            <div class="rm-toast rm-toast--err" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 6000)"><span>{{ $errors->first() }}</span></div>
+        @endif
 
         {{-- Top bar --}}
         <div class="rh-pay-topbar">
@@ -337,8 +342,11 @@
                                                     <select class="rm-input" :name="'expenses[' + i + '][expense_category_id]'"
                                                             x-model="row.expense_category_id">
                                                         <option value="">Uncategorised</option>
+                                                        {{-- :selected per option: x-model alone runs before these
+                                                             options exist, so the select showed and SUBMITTED
+                                                             "Uncategorised", wiping every row's category on save. --}}
                                                         <template x-for="c in (day.categories || [])" :key="c.id">
-                                                            <option :value="c.id" x-text="c.name"></option>
+                                                            <option :value="c.id" :selected="String(c.id) === String(row.expense_category_id)" x-text="c.name"></option>
                                                         </template>
                                                     </select>
                                                 </td>
