@@ -20,6 +20,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -318,14 +319,30 @@ class DayClosureController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
             'expenses' => ['nullable', 'array'],
             'expenses.*.id' => ['nullable', 'integer', 'exists:expenses,id'],
-            'expenses.*.description' => ['nullable', 'string', 'max:255'],
+            // `sometimes`: an absent description means "leave this row's alone" (see the
+            // loop below). Sent but blank, it is refused: the column is NOT NULL, and a
+            // blank used to reach the database as a 500. 200 is the column's width.
+            'expenses.*.description' => ['sometimes', 'required', 'string', 'max:200'],
             'expenses.*.vendor_name' => ['nullable', 'string', 'max:140'],
             'expenses.*.expense_category_id' => ['nullable', 'integer', ExpenseCategory::availableToRule((int) $dayClosure->branch_id)],
             'expenses.*.amount' => ['required_with:expenses', 'numeric', 'min:0'],
             'expenses.*.paid_from' => ['nullable', Rule::in(Expense::PAID_FROM)],
             'deleted_expense_ids' => ['nullable', 'array'],
             'deleted_expense_ids.*' => ['integer', 'exists:expenses,id'],
+        ], [
+            'expenses.*.description.required' => 'Each expense needs a description.',
+            'expenses.*.description.max' => 'An expense description can be at most 200 characters.',
         ]);
+
+        // A NEW row has nothing to fall back on, so it needs a description even when
+        // the key is absent.
+        foreach ($validated['expenses'] ?? [] as $index => $row) {
+            if (empty($row['id']) && ! array_key_exists('description', $row)) {
+                throw ValidationException::withMessages([
+                    "expenses.{$index}.description" => 'Each expense needs a description.',
+                ]);
+            }
+        }
 
         $date = $dayClosure->closed_at_date->format('Y-m-d');
         $branchId = (int) $dayClosure->branch_id;

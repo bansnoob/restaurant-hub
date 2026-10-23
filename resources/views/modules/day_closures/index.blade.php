@@ -22,6 +22,11 @@
         @if (session('error'))
             <div class="rm-toast rm-toast--err" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 4000)"><span>{{ session('error') }}</span></div>
         @endif
+        {{-- Validation errors from Edit Day and the special-expense form. Without this a
+             refused save looked like the page simply reloading. --}}
+        @if ($errors->any())
+            <div class="rm-toast rm-toast--err" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 6000)"><span>{{ $errors->first() }}</span></div>
+        @endif
 
         {{-- Top bar --}}
         <div class="rh-pay-topbar">
@@ -324,12 +329,14 @@
                                         <template x-for="(row, i) in expenses" :key="i">
                                             <tr>
                                                 <td>
-                                                    <input type="text" class="rm-input" placeholder="Description"
+                                                    {{-- required/maxlength stop a refused save in the browser, so the
+                                                         drawer stays open with the edits; the server checks the same. --}}
+                                                    <input type="text" class="rm-input" placeholder="Description" required maxlength="200"
                                                            :name="'expenses[' + i + '][description]'" x-model="row.description">
                                                     {{-- Vendor and category have to be submitted, not merely displayed:
                                                          this form posts every row on the day, so a field it leaves out is
                                                          written back as null on rows nobody touched. --}}
-                                                    <input type="text" class="rm-input rh-cash-edit-sub" placeholder="Vendor (optional)"
+                                                    <input type="text" class="rm-input rh-cash-edit-sub" placeholder="Vendor (optional)" maxlength="140"
                                                            :name="'expenses[' + i + '][vendor_name]'" x-model="row.vendor_name">
                                                     <input type="hidden" :name="'expenses[' + i + '][id]'" :value="row.id || ''">
                                                 </td>
@@ -337,13 +344,16 @@
                                                     <select class="rm-input" :name="'expenses[' + i + '][expense_category_id]'"
                                                             x-model="row.expense_category_id">
                                                         <option value="">Uncategorised</option>
+                                                        {{-- :selected per option: x-model alone runs before these
+                                                             options exist, so the select showed and SUBMITTED
+                                                             "Uncategorised", wiping every row's category on save. --}}
                                                         <template x-for="c in (day.categories || [])" :key="c.id">
-                                                            <option :value="c.id" x-text="c.name"></option>
+                                                            <option :value="c.id" :selected="String(c.id) === String(row.expense_category_id)" x-text="c.name"></option>
                                                         </template>
                                                     </select>
                                                 </td>
                                                 <td style="width:9rem;">
-                                                    <input type="number" step="0.01" min="0" class="rm-input"
+                                                    <input type="number" step="0.01" min="0" class="rm-input" required
                                                            :name="'expenses[' + i + '][amount]'" x-model.number="row.amount">
                                                 </td>
                                                 <td style="width:8rem;">
