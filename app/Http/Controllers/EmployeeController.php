@@ -185,8 +185,8 @@ class EmployeeController extends Controller
                 'hours_worked' => round($totalMinutes / 60, 1),
             ],
             'payroll_history' => $payrollHistory,
-            // Owner-only: whether this employee can sign in to the POS, and as whom.
-            'login' => $request->user()->hasRole('owner') && $employee->user
+            // Managers only: whether this employee can sign in to the POS, and as whom.
+            'login' => $request->user()->canManage() && $employee->user
                 ? ['email' => $employee->user->email]
                 : null,
         ]);

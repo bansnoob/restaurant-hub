@@ -107,7 +107,7 @@
                 <span class="rh-nav-label">Cash Report</span>
             </a>
 
-            @role('owner')
+            @hasanyrole('owner|admin')
             <a href="{{ route('gcash-report.index') }}"
                class="rh-nav-link {{ request()->routeIs('gcash-report.*') ? 'rh-nav-link--active' : '' }}">
                 <svg class="rh-nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -116,7 +116,7 @@
                 </svg>
                 <span class="rh-nav-label">GCash Report</span>
             </a>
-            @endrole
+            @endhasanyrole
 
             @role('owner')
             <a href="{{ route('branches.index') }}"

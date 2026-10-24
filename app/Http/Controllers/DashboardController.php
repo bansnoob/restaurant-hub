@@ -23,19 +23,22 @@ class DashboardController extends Controller
 {
     public function index(Request $request): View|RedirectResponse
     {
-        // Every figure below adds up all branches, so this is the owner's page. A
-        // cashier never reaches here: the 'cashier.pos' middleware sends them to the POS.
-        abort_unless($request->user()->hasRole('owner'), 403);
+        // The super admin sees every branch added up; a branch admin sees only their
+        // own. A cashier never reaches here: 'cashier.pos' sends them to the POS.
+        abort_unless($request->user()->canManage(), 403);
+        $branchId = $request->user()->lockedBranchId();
+        // Narrows a query to the admin's branch; a no-op for the super admin.
+        $scope = fn ($query, string $column = 'branch_id') => $branchId === null ? $query : $query->where($column, $branchId);
 
         $today = now()->toDateString();
         $monthStart = now()->startOfMonth()->toDateString();
 
         // ── Active headcount ──────────────────────────────────────────────
-        $activeEmployees = Employee::where('is_active', true)->count();
-        $activeBranches = Branch::where('is_active', true)->count();
+        $activeEmployees = $scope(Employee::where('is_active', true))->count();
+        $activeBranches = $scope(Branch::where('is_active', true), 'id')->count();
 
         // ── Today's sales (split by payment method) ───────────────────────
-        $todaySalesQuery = Sale::whereDate('sale_datetime', $today)->where('status', 'completed');
+        $todaySalesQuery = $scope(Sale::whereDate('sale_datetime', $today)->where('status', 'completed'));
         $todaySales = (float) (clone $todaySalesQuery)->sum('grand_total');
         $todayOrderCount = (clone $todaySalesQuery)->count();
 
@@ -52,7 +55,7 @@ class DashboardController extends Controller
         $todayMixedOrderCount = (clone $todaySalesQuery)->where('payment_method', 'mixed')->count();
 
         // ── Today's expenses ──────────────────────────────────────────────
-        $todayExpensesQuery = Expense::whereDate('expense_date', $today)->where('status', 'approved');
+        $todayExpensesQuery = $scope(Expense::whereDate('expense_date', $today)->where('status', 'approved'));
         $todayExpenses = (float) (clone $todayExpensesQuery)->sum('amount');
         $todayCashExpenses = (float) (clone $todayExpensesQuery)->where('payment_method', 'cash')->sum('amount');
 
@@ -61,7 +64,7 @@ class DashboardController extends Controller
         $todayCashOnHand = $todayCashSales - $todayCashExpenses;
 
         // ── Today's attendance ────────────────────────────────────────────
-        $todayAttendance = AttendanceRecord::whereDate('work_date', $today)
+        $todayAttendance = $scope(AttendanceRecord::whereDate('work_date', $today))
             ->selectRaw('status, COUNT(*) as cnt')
             ->groupBy('status')
             ->pluck('cnt', 'status');
@@ -72,12 +75,12 @@ class DashboardController extends Controller
         $totalClockedToday = (int) $todayAttendance->sum();
 
         // ── Month-to-date ─────────────────────────────────────────────────
-        $mtdSales = (float) Sale::whereDate('sale_datetime', '>=', $monthStart)
+        $mtdSales = (float) $scope(Sale::query())->whereDate('sale_datetime', '>=', $monthStart)
             ->whereDate('sale_datetime', '<=', $today)
             ->where('status', 'completed')
             ->sum('grand_total');
 
-        $mtdExpenses = (float) Expense::whereDate('expense_date', '>=', $monthStart)
+        $mtdExpenses = (float) $scope(Expense::query())->whereDate('expense_date', '>=', $monthStart)
             ->whereDate('expense_date', '<=', $today)
             ->where('status', 'approved')
             ->sum('amount');
@@ -88,15 +91,16 @@ class DashboardController extends Controller
         // 1st would otherwise read as a catastrophic single-day loss and would
         // throw that day's drawer variance by the full amount. It belongs only
         // to the month, which is what the panel below reports.
-        $mtdOverheadQuery = SpecialExpense::query()->forMonth($monthStart);
+        // A branch admin sees their branch's overhead only; company-wide overhead
+        // (branch_id NULL) is the super admin's.
+        $mtdOverheadQuery = $scope(SpecialExpense::query()->forMonth($monthStart), 'special_expenses.branch_id');
         $mtdOverhead = (float) (clone $mtdOverheadQuery)->sum('amount');
 
         // Net after overhead is the only figure on this page that is true profit:
         // MTD revenue less both daily operating expenses and monthly overhead.
         $mtdNetAfterOverhead = $mtdSales - $mtdExpenses - $mtdOverhead;
 
-        $overheadBreakdown = SpecialExpense::query()
-            ->forMonth($monthStart)
+        $overheadBreakdown = $scope(SpecialExpense::query()->forMonth($monthStart), 'special_expenses.branch_id')
             ->leftJoin(
                 'special_expense_categories',
                 'special_expenses.special_expense_category_id',
@@ -116,11 +120,13 @@ class DashboardController extends Controller
             ])
             ->all();
 
-        $draftPayrolls = PayrollEntry::where('status', 'draft')->count();
+        $draftPayrolls = PayrollEntry::where('status', 'draft')
+            ->when($branchId !== null, fn ($q) => $q->whereHas('payrollPeriod', fn ($p) => $p->where('branch_id', $branchId)))
+            ->count();
 
         // ── 7-day sales trend ─────────────────────────────────────────────
         $sevenDaysAgo = now()->subDays(6)->toDateString();
-        $dailySalesMap = Sale::whereDate('sale_datetime', '>=', $sevenDaysAgo)
+        $dailySalesMap = $scope(Sale::query())->whereDate('sale_datetime', '>=', $sevenDaysAgo)
             ->where('status', 'completed')
             ->selectRaw('DATE(sale_datetime) as sale_date, SUM(grand_total) as total')
             ->groupBy('sale_date')
@@ -140,17 +146,17 @@ class DashboardController extends Controller
         $chartMax = max((float) $last7Days->max('total'), 1.0);
 
         // ── Low stock alerts ──────────────────────────────────────────────
-        $lowStockItems = Ingredient::where('is_active', true)
+        $lowStockItems = $scope(Ingredient::where('is_active', true))
             ->whereColumn('current_stock', '<=', 'reorder_level')
             ->count();
 
         // ── Recent activity ───────────────────────────────────────────────
-        $recentSales = Sale::where('status', 'completed')
+        $recentSales = $scope(Sale::where('status', 'completed'))
             ->orderByDesc('sale_datetime')
             ->limit(6)
             ->get(['order_number', 'sale_datetime', 'grand_total', 'order_type', 'payment_method']);
 
-        $recentExpenses = Expense::where('status', 'approved')
+        $recentExpenses = $scope(Expense::where('status', 'approved'))
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
             ->limit(6)
@@ -162,7 +168,7 @@ class DashboardController extends Controller
         )->pluck('name', 'id');
 
         // ── Today's closures, one row per branch ──────────────────────────
-        $branchClosures = $this->branchClosures($today);
+        $branchClosures = $this->branchClosures($today, $branchId);
 
         return view('dashboard', compact(
             'activeEmployees',
@@ -205,9 +211,10 @@ class DashboardController extends Controller
      *
      * @return Collection<int, array{branch_id: int, branch_name: string, closure: ?DayClosure}>
      */
-    private function branchClosures(string $date): Collection
+    private function branchClosures(string $date, ?int $onlyBranchId = null): Collection
     {
         $closures = DayClosure::whereDate('closed_at_date', $date)
+            ->when($onlyBranchId !== null, fn ($q) => $q->where('branch_id', $onlyBranchId))
             ->with('closedBy:id,name')
             ->orderByDesc('id')
             ->get()
@@ -216,6 +223,7 @@ class DashboardController extends Controller
 
         return Branch::query()
             ->where(fn ($q) => $q->where('is_active', true)->orWhereIn('id', $closures->keys()))
+            ->when($onlyBranchId !== null, fn ($q) => $q->whereKey($onlyBranchId))
             ->orderBy('name')
             ->get(['id', 'name'])
             ->map(fn (Branch $branch) => [

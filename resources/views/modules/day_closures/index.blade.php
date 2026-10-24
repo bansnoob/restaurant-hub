@@ -4,7 +4,8 @@
     </x-slot>
 
     @php
-        $isOwner = (bool) auth()->user()?->hasRole('owner');
+        // Super admin or branch admin: the edit/manage controls.
+        $isOwner = (bool) auth()->user()?->canManage();
         $hasFilters = ! empty($filters['branch_id']);
         $rangeLabel = \Carbon\Carbon::parse($filters['date_from'])->format('M j').' – '.\Carbon\Carbon::parse($filters['date_to'])->format('M j, Y');
     @endphp

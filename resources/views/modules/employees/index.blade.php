@@ -4,7 +4,8 @@
     </x-slot>
 
     @php
-        $isOwner = (bool) auth()->user()?->hasRole('owner');
+        // Super admin or branch admin: the edit/manage controls.
+        $isOwner = (bool) auth()->user()?->canManage();
         $allBranchesUrl = route('employees.index');
         $typeLabels = ['full_time' => 'Full-Time', 'part_time' => 'Part-Time', 'contract' => 'Contract'];
         $typeCounts = [
