@@ -37,8 +37,8 @@ class MenuController extends Controller
 
         // Active branches, plus the one being viewed if it has since been deactivated,
         // so the picker never silently shows a different branch from the page.
-        $branches = Branch::where('is_active', true)
-            ->orWhere('id', $branch->id)
+        $branches = Branch::visibleTo($request->user())
+            ->where(fn ($q) => $q->where('is_active', true)->orWhere('id', $branch->id))
             ->orderBy('name')
             ->get(['id', 'name']);
 

@@ -25,7 +25,7 @@ class EmployeeController extends Controller
 
     public function index(Request $request): View
     {
-        $branches = Branch::where('is_active', true)->orderBy('name')->get();
+        $branches = Branch::visibleTo($request->user())->where('is_active', true)->orderBy('name')->get();
 
         $search = trim($this->queryValue($request, 'search'));
         $branchId = $this->queryValue($request, 'branch_id');

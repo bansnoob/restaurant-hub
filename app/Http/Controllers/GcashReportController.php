@@ -83,8 +83,11 @@ class GcashReportController extends Controller
         ];
 
         return view('modules.gcash_report.index', [
-            'branches' => Branch::where('is_active', true)->orderBy('name')->get(),
-            'categories' => ExpenseCategory::where('is_active', true)->orderBy('name')->get(),
+            'branches' => Branch::visibleTo($request->user())->where('is_active', true)->orderBy('name')->get(),
+            'categories' => ExpenseCategory::where('is_active', true)
+                ->when($request->user()->lockedBranchId(), fn ($q, $branchId) => $q->availableTo($branchId))
+                ->orderBy('name')
+                ->get(),
             'sales' => $sales,
             'expenses' => $expenses,
             'adjustments' => $this->paginateAdjustments($branchId, $dateFrom, $dateTo),
@@ -314,7 +317,7 @@ class GcashReportController extends Controller
     {
         $wallets = GcashWallet::all()->keyBy('branch_id');
 
-        return Branch::orderBy('name')->get()
+        return Branch::visibleTo(auth()->user())->orderBy('name')->get()
             ->mapWithKeys(function (Branch $branch) use ($wallets, $fallbackDate) {
                 $wallet = $wallets->get($branch->id);
 

@@ -36,8 +36,9 @@ class SpecialExpenseOptions
             ->distinct()->pluck('special_expense_category_id');
 
         return [
-            'branches' => Branch::where('is_active', true)
-                ->orWhereIn('id', $usedBranchIds)
+            // The OR is grouped so a branch admin's restriction applies to both halves.
+            'branches' => Branch::visibleTo(auth()->user())
+                ->where(fn ($q) => $q->where('is_active', true)->orWhereIn('id', $usedBranchIds))
                 ->orderBy('name')->get(),
             'categories' => SpecialExpenseCategory::where('is_active', true)
                 ->orWhereIn('id', $usedCategoryIds)

@@ -35,13 +35,14 @@ class AttendanceController extends Controller
         $branchFilter = $this->queryValue($request, 'branch_id');
 
         $employees = Employee::where('is_active', true)
+            ->when($request->user()->lockedBranchId(), fn ($q, $branchId) => $q->where('branch_id', $branchId))
             ->with('branch')
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->get();
         $employeeIds = $employees->pluck('id');
 
-        $branches = \App\Models\Branch::where('is_active', true)->orderBy('name')->get();
+        $branches = \App\Models\Branch::visibleTo($request->user())->where('is_active', true)->orderBy('name')->get();
 
         $rulesByBranch = PayrollRule::whereIn('branch_id', $employees->pluck('branch_id')->unique())
             ->get()

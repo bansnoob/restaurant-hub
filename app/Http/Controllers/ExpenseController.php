@@ -35,8 +35,11 @@ class ExpenseController extends Controller
         $paymentFilter = $this->queryValue($request, 'payment_method');
         $search = trim($this->queryValue($request, 'search'));
 
-        $branches = Branch::where('is_active', true)->orderBy('name')->get();
-        $categories = ExpenseCategory::where('is_active', true)->orderBy('name')->get();
+        $branches = Branch::visibleTo($request->user())->where('is_active', true)->orderBy('name')->get();
+        $categories = ExpenseCategory::where('is_active', true)
+            ->when($request->user()->lockedBranchId(), fn ($q, $branchId) => $q->availableTo($branchId))
+            ->orderBy('name')
+            ->get();
 
         // Columns are table-qualified: categoryBreakdown() joins expense_categories,
         // which has its own branch_id, and a bare `branch_id` there made every

@@ -36,8 +36,9 @@ class PayrollController extends Controller
 
     public function index(Request $request): View
     {
-        $branches = Branch::where('is_active', true)->orderBy('name')->get();
+        $branches = Branch::visibleTo($request->user())->where('is_active', true)->orderBy('name')->get();
         $employees = Employee::where('is_active', true)
+            ->when($request->user()->lockedBranchId(), fn ($q, $branchId) => $q->where('branch_id', $branchId))
             ->with('branch')
             ->orderBy('last_name')
             ->orderBy('first_name')
