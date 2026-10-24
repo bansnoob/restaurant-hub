@@ -460,8 +460,10 @@
                         <button type="button" class="rm-drawer-close" @click="closeForm()">×</button>
                     </div>
                     <div class="rm-drawer-body">
+                        {{-- A template must keep one root element, so the whole block is skipped for a
+                             branch admin rather than emptied (Alpine throws on an empty x-if). --}}
+                        @unless ($lockedBranch)
                         <template x-if="form.mode === 'create'">
-                            @unless ($lockedBranch)
                             <div class="rm-field">
                                 <label class="rm-field-label">Branch</label>
                                 <select name="branch_id" class="rm-input" x-model="form.branch_id" required>
@@ -471,8 +473,8 @@
                                     @endforeach
                                 </select>
                             </div>
-                            @endunless
                         </template>
+                        @endunless
                         <div class="rm-field">
                             <label class="rm-field-label">Name</label>
                             <input type="text" name="name" class="rm-input" x-model="form.name" required maxlength="120">
