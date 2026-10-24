@@ -183,6 +183,7 @@ class PayrollController extends Controller
 
         $calculator = app(AttendanceSummaryCalculator::class);
         $employee = Employee::where('is_active', true)->findOrFail((int) $validated['employee_id']);
+        $this->authorizeBranch($request, (int) $employee->branch_id);
 
         $this->guardEmployeeForGenerate($employee);
 
@@ -206,6 +207,9 @@ class PayrollController extends Controller
         $employees = Employee::where('is_active', true)
             ->whereIn('id', $validated['employee_ids'])
             ->get();
+        foreach ($employees as $employee) {
+            $this->authorizeBranch($request, (int) $employee->branch_id);
+        }
 
         $skipped = [];
         $generated = 0;
@@ -304,6 +308,7 @@ class PayrollController extends Controller
 
         $entry = PayrollEntry::with(['payrollPeriod', 'employee', 'specialExpense'])
             ->findOrFail($validated['payroll_entry_id']);
+        $this->authorizeBranch($request, (int) $entry->payrollPeriod?->branch_id);
 
         if ($entry->status === 'paid') {
             return back()->with('error', 'Payroll report is already finalized.');
@@ -645,5 +650,15 @@ class PayrollController extends Controller
         }
 
         return $rows;
+    }
+
+    /**
+     * Employees and reports named in a form body: the super admin reaches every
+     * branch, a branch admin only their own. (Records in the URL are checked by
+     * LockToOwnBranch.)
+     */
+    private function authorizeBranch(Request $request, int $branchId): void
+    {
+        abort_unless($request->user()->canAccessBranch($branchId), 403, 'That payroll belongs to another branch.');
     }
 }

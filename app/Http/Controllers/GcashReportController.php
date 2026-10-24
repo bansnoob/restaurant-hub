@@ -371,6 +371,12 @@ class GcashReportController extends Controller
             return back()->with('error', 'That entry no longer exists.');
         }
 
+        // Not a bound record, so LockToOwnBranch cannot see it: check the entry's branch.
+        $entryBranchId = (int) ($type === GcashEntryStatus::TYPE_SALE
+            ? Sale::whereKey($id)->value('branch_id')
+            : Expense::whereKey($id)->value('branch_id'));
+        abort_unless($request->user()->canAccessBranch($entryBranchId), 403, 'That entry belongs to another branch.');
+
         // Pending is the absence of a verdict, so clearing one deletes the row rather than
         // storing a third state that the balance query would have to know about.
         if ($validated['status'] === GcashEntryStatus::PENDING) {

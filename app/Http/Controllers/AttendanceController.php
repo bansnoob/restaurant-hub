@@ -222,6 +222,7 @@ class AttendanceController extends Controller
         ]);
 
         $employee = Employee::findOrFail($validated['employee_id']);
+        $this->authorizeBranch($request, (int) $employee->branch_id);
         $clockInAt = Carbon::parse($validated['work_date'].' '.$validated['clock_in_time']);
 
         $record = AttendanceRecord::firstOrNew([
@@ -269,6 +270,7 @@ class AttendanceController extends Controller
         ]);
 
         $record = AttendanceRecord::findOrFail($validated['record_id']);
+        $this->authorizeBranch($request, (int) $record->branch_id);
         $workDate = Carbon::parse($record->work_date)->toDateString();
 
         $clockInAt = $record->clock_in_at ? Carbon::parse($record->clock_in_at) : null;
@@ -416,13 +418,13 @@ class AttendanceController extends Controller
         }
     }
 
-    /** Owners clock anyone; a cashier only clocks staff at their own branch. */
+    /** The super admin reaches every branch; anyone else only their own. */
     private function authorizeBranch(Request $request, int $branchId): void
     {
         abort_unless(
             $request->user()->canAccessBranch($branchId),
             403,
-            'You cannot clock staff in or out at another branch.'
+            'That attendance belongs to another branch.'
         );
     }
 }
