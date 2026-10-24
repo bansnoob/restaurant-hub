@@ -31,6 +31,12 @@ class AuthController extends Controller
             ]);
         }
 
+        if ($user->is_active === false) {
+            throw ValidationException::withMessages([
+                'email' => ['This account has been deactivated.'],
+            ]);
+        }
+
         $token = $user->createToken($request->string('device_name')->toString())->plainTextToken;
         $employee = $user->employee;
 

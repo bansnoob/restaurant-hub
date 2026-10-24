@@ -14,6 +14,7 @@ use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SalesController;
 use App\Http\Controllers\SpecialExpenseController;
+use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -53,6 +54,20 @@ Route::middleware(['auth', 'cashier.pos', 'branch.lock'])->group(function () {
     Route::post('/branches/{branch}/assign-to-me', [BranchController::class, 'assignToMe'])
         ->middleware('role:owner')
         ->name('branches.assign-to-me');
+
+    // Users (super admin only): every account, including branch admins and cashiers.
+    Route::get('/users', [UserController::class, 'index'])
+        ->middleware('role:owner')
+        ->name('users.index');
+    Route::post('/users', [UserController::class, 'store'])
+        ->middleware('role:owner')
+        ->name('users.store');
+    Route::put('/users/{user}', [UserController::class, 'update'])
+        ->middleware('role:owner')
+        ->name('users.update');
+    Route::put('/users/{user}/password', [UserController::class, 'updatePassword'])
+        ->middleware('role:owner')
+        ->name('users.password');
 
     Route::get('/attendance', [AttendanceController::class, 'index'])
         ->middleware('role:owner|admin')

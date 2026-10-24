@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\LockToOwnBranch;
 use App\Http\Middleware\SendCashiersToPos;
 use Illuminate\Foundation\Application;
@@ -23,7 +24,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'role_or_permission' => RoleOrPermissionMiddleware::class,
             'cashier.pos' => SendCashiersToPos::class,
             'branch.lock' => LockToOwnBranch::class,
+            'active' => EnsureUserIsActive::class,
         ]);
+        // A deactivated account is signed out on its next website request.
+        $middleware->appendToGroup('web', EnsureUserIsActive::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(function ($request) {
