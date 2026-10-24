@@ -184,7 +184,7 @@ class DayClosureController extends Controller
         $dateTo = $this->queryDate($request, 'date_to', now()->toDateString());
         $branchId = (! empty($branchFilter) && is_numeric($branchFilter)) ? (int) $branchFilter : null;
 
-        $branches = Branch::where('is_active', true)->orderBy('name')->get();
+        $branches = Branch::visibleTo($request->user())->where('is_active', true)->orderBy('name')->get();
 
         // Unclosed days have no row to paginate over, so the union is built in memory and
         // sliced here. The range bounds it: 30 days x branches, not the whole table.

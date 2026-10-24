@@ -17,14 +17,15 @@ Route::prefix('v1')->group(function () {
 
     Route::post('/auth/login', [AuthController::class, 'login']);
 
-    Route::middleware('auth:sanctum')->group(function () {
+    // 'active': a deactivated account's iPad sign-in stops working on its next request.
+    Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
         Route::get('/auth/me', [AuthController::class, 'me']);
 
         Route::get('/menu/categories', [MenuController::class, 'categories']);
         Route::get('/menu/items', [MenuController::class, 'items']);
 
-        Route::middleware('role:owner|cashier')->group(function () {
+        Route::middleware('role:owner|admin|cashier')->group(function () {
             Route::get('/orders', [OrderController::class, 'index']);
             Route::post('/orders', [OrderController::class, 'store']);
             Route::get('/orders/{sale}', [OrderController::class, 'show']);
@@ -32,7 +33,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/orders/{sale}/void', [OrderController::class, 'void']);
         });
 
-        Route::middleware('role:owner|cashier')->group(function () {
+        Route::middleware('role:owner|admin|cashier')->group(function () {
             Route::get('/employees', [EmployeeController::class, 'index']);
 
             Route::post('/attendance/clock-in', [AttendanceController::class, 'clockIn']);
@@ -40,7 +41,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/attendance/today', [AttendanceController::class, 'today']);
         });
 
-        Route::middleware('role:owner|cashier')->group(function () {
+        Route::middleware('role:owner|admin|cashier')->group(function () {
             Route::get('/expenses', [ExpenseController::class, 'index']);
             Route::post('/expenses', [ExpenseController::class, 'store']);
             Route::put('/expenses/{expense}', [ExpenseController::class, 'update']);
@@ -50,7 +51,7 @@ Route::prefix('v1')->group(function () {
 
         // Inventory. Throttled because a stock count submit is a large batch
         // and there is no global API rate limit in this app.
-        Route::middleware(['role:owner|cashier', 'throttle:60,1'])
+        Route::middleware(['role:owner|admin|cashier', 'throttle:60,1'])
             ->prefix('inventory')
             ->group(function () {
                 Route::get('/summary', [IngredientController::class, 'summary']);
@@ -77,7 +78,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/counts', [StockCountController::class, 'store']);
             });
 
-        Route::middleware('role:owner|cashier')->group(function () {
+        Route::middleware('role:owner|admin|cashier')->group(function () {
             Route::get('/day-close/preview', [DayClosureController::class, 'preview']);
             Route::post('/day-close', [DayClosureController::class, 'store']);
             Route::get('/day-close/history', [DayClosureController::class, 'history']);

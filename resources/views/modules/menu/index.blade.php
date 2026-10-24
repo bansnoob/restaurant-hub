@@ -32,11 +32,13 @@
             {{-- Which branch's menu this is. Picking one never changes your own branch
                  (Branches → Use this branch), which is where your POS sales go. --}}
             <form method="GET" action="{{ route('menu.index') }}">
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-sal-select" aria-label="Branch" onchange="this.form.submit()">
                     @foreach ($branches as $branch)
                         <option value="{{ $branch->id }}" {{ (int) $branch->id === $branchId ? 'selected' : '' }}>{{ $branch->name }}</option>
                     @endforeach
                 </select>
+                @endunless
             </form>
             <button type="button" class="rm-btn rm-btn--ghost" @click="openCategoryForm()">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg>

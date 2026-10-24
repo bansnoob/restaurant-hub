@@ -19,7 +19,7 @@ class SendCashiersToPos
     {
         $user = $request->user();
 
-        if ($user !== null && $user->hasRole('cashier') && ! $user->hasRole('owner')) {
+        if ($user !== null && $user->hasRole('cashier') && ! $user->canManage()) {
             return redirect('/pos/');
         }
 

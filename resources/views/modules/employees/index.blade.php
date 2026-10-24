@@ -4,7 +4,8 @@
     </x-slot>
 
     @php
-        $isOwner = (bool) auth()->user()?->hasRole('owner');
+        // Super admin or branch admin: the edit/manage controls.
+        $isOwner = (bool) auth()->user()?->canManage();
         $allBranchesUrl = route('employees.index');
         $typeLabels = ['full_time' => 'Full-Time', 'part_time' => 'Part-Time', 'contract' => 'Contract'];
         $typeCounts = [
@@ -100,6 +101,7 @@
                     >
                 </label>
 
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-emp-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
@@ -108,6 +110,7 @@
                         </option>
                     @endforeach
                 </select>
+                @endunless
 
                 <div class="rh-emp-chips">
                     @foreach ($typeLabels as $key => $label)
@@ -481,6 +484,7 @@
                         <button type="button" class="rm-drawer-close" @click="closeForm()">×</button>
                     </div>
                     <div class="rm-drawer-body">
+                        @unless ($lockedBranch)
                         <div class="rm-field">
                             <label class="rm-field-label">Branch</label>
                             <select name="branch_id" class="rm-input" x-model="form.branch_id" required>
@@ -490,6 +494,7 @@
                                 @endforeach
                             </select>
                         </div>
+                        @endunless
                         <div class="rm-field-row">
                             <div class="rm-field">
                                 <label class="rm-field-label">Code <span class="rm-field-opt">(optional)</span></label>

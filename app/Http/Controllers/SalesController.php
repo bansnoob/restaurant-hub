@@ -39,7 +39,7 @@ class SalesController extends Controller
         $statusFilter = array_values(array_intersect(self::STATUSES, $statusFilter));
         $branchId = (! empty($branchFilter) && is_numeric($branchFilter)) ? (int) $branchFilter : null;
 
-        $branches = Branch::where('is_active', true)->orderBy('name')->get();
+        $branches = Branch::visibleTo($request->user())->where('is_active', true)->orderBy('name')->get();
 
         // Categories are branch-scoped (a null branch means shared). When a branch is chosen,
         // only offer categories that could actually appear for it.

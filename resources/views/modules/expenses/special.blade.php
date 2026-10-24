@@ -77,12 +77,14 @@
                     <option value="{{ $option['value'] }}" {{ $filters['month'] === $option['value'] ? 'selected' : '' }}>{{ $option['label'] }}</option>
                 @endforeach
             </select>
+            @unless ($lockedBranch)
             <select name="branch_id" class="rh-exp-select" @change="$refs.filterForm.requestSubmit()">
                 <option value="">All branches</option>
                 @foreach ($branches as $branch)
                     <option value="{{ $branch->id }}" {{ (string) $filters['branch_id'] === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
                 @endforeach
             </select>
+            @endunless
             <select name="special_expense_category_id" class="rh-exp-select" @change="$refs.filterForm.requestSubmit()">
                 <option value="">All categories</option>
                 @foreach ($categories as $category)

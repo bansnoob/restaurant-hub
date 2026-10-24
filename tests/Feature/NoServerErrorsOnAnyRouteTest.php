@@ -54,7 +54,7 @@ class NoServerErrorsOnAnyRouteTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const FIELDS = 'address adjustment_date amount assign_to_me base_price birthday branch_id cash cash_amount category_id clock_in_time clock_out_time closed_at_date code count counted_at counted_cash current_password current_stock daily_rate date date_from date_to description device_name email employee_code employee_id employment_type end_date expected_current_stock expense_category_id expense_date first_deduction_amount first_deduction_percent first_deduction_time first_deduction_type first_name gcash gcash_amount hire_date include_inactive ingredient_category_id ingredient_id is_active last_name limit low_only mixed name new_category_name note notes opening_balance opening_date opening_float order_type paid_date paid_from paid_total password password_confirmation payment_method payroll_entry_id period_month phone quantity reason record_id reference_no reorder_level required_clock_in_time restock_cursor sale_date search second_deduction_amount second_deduction_percent second_deduction_time second_deduction_type sku slug sort_order special_expense_category_id standard_daily_hours start_date status table_label third_deduction_amount third_deduction_percent third_deduction_time third_deduction_type unit unit_cost vendor_name work_date';
+    private const FIELDS = 'role address adjustment_date amount assign_to_me base_price birthday branch_id cash cash_amount category_id clock_in_time clock_out_time closed_at_date code count counted_at counted_cash current_password current_stock daily_rate date date_from date_to description device_name email employee_code employee_id employment_type end_date expected_current_stock expense_category_id expense_date first_deduction_amount first_deduction_percent first_deduction_time first_deduction_type first_name gcash gcash_amount hire_date include_inactive ingredient_category_id ingredient_id is_active last_name limit low_only mixed name new_category_name note notes opening_balance opening_date opening_float order_type paid_date paid_from paid_total password password_confirmation payment_method payroll_entry_id period_month phone quantity reason record_id reference_no reorder_level required_clock_in_time restock_cursor sale_date search second_deduction_amount second_deduction_percent second_deduction_time second_deduction_type sku slug sort_order special_expense_category_id standard_daily_hours start_date status table_label third_deduction_amount third_deduction_percent third_deduction_time third_deduction_type unit unit_cost vendor_name work_date';
 
     private const LIST_FIELDS = 'items entries expenses categories employee_ids auto_clockout_attendance_ids deleted_expense_ids';
 
@@ -253,6 +253,7 @@ class NoServerErrorsOnAnyRouteTest extends TestCase
             'first_deduction_type' => 'amount', 'second_deduction_type' => 'amount', 'third_deduction_type' => 'percent',
             'first_deduction_amount' => 40, 'second_deduction_amount' => 80, 'third_deduction_percent' => 50, 'standard_daily_hours' => 8,
             'cash_amount' => 10, 'gcash_amount' => 0, 'paid_total' => 10, 'reason' => 'probe', 'note' => 'probe', 'notes' => 'probe',
+            'role' => 'cashier',
         ];
     }
 
@@ -323,6 +324,8 @@ class NoServerErrorsOnAnyRouteTest extends TestCase
             'expense' => $expense->id, 'expenseCategory' => $expCat->id, 'specialExpense' => $special->id,
             'payrollPeriod' => $period->id, 'payrollEntry' => $entry->id, 'ingredient' => $ingredient->id,
             'ingredientCategory' => $ingCat->id, 'stockCount' => $count->id, 'gcashAdjustment' => $adjustment->id,
+            // Users page: another account, never the owner making the requests.
+            'user' => $this->cashier->id,
         ];
     }
 }

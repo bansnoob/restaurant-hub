@@ -83,8 +83,11 @@ class GcashReportController extends Controller
         ];
 
         return view('modules.gcash_report.index', [
-            'branches' => Branch::where('is_active', true)->orderBy('name')->get(),
-            'categories' => ExpenseCategory::where('is_active', true)->orderBy('name')->get(),
+            'branches' => Branch::visibleTo($request->user())->where('is_active', true)->orderBy('name')->get(),
+            'categories' => ExpenseCategory::where('is_active', true)
+                ->when($request->user()->lockedBranchId(), fn ($q, $branchId) => $q->availableTo($branchId))
+                ->orderBy('name')
+                ->get(),
             'sales' => $sales,
             'expenses' => $expenses,
             'adjustments' => $this->paginateAdjustments($branchId, $dateFrom, $dateTo),
@@ -314,7 +317,7 @@ class GcashReportController extends Controller
     {
         $wallets = GcashWallet::all()->keyBy('branch_id');
 
-        return Branch::orderBy('name')->get()
+        return Branch::visibleTo(auth()->user())->orderBy('name')->get()
             ->mapWithKeys(function (Branch $branch) use ($wallets, $fallbackDate) {
                 $wallet = $wallets->get($branch->id);
 
@@ -370,6 +373,12 @@ class GcashReportController extends Controller
         if (! $this->entryExists($type, $id)) {
             return back()->with('error', 'That entry no longer exists.');
         }
+
+        // Not a bound record, so LockToOwnBranch cannot see it: check the entry's branch.
+        $entryBranchId = (int) ($type === GcashEntryStatus::TYPE_SALE
+            ? Sale::whereKey($id)->value('branch_id')
+            : Expense::whereKey($id)->value('branch_id'));
+        abort_unless($request->user()->canAccessBranch($entryBranchId), 403, 'That entry belongs to another branch.');
 
         // Pending is the absence of a verdict, so clearing one deletes the row rather than
         // storing a third state that the balance query would have to know about.

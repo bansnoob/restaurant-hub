@@ -4,7 +4,8 @@
     </x-slot>
 
     @php
-        $isOwner = (bool) auth()->user()?->hasRole('owner');
+        // Super admin or branch admin: the edit/manage controls.
+        $isOwner = (bool) auth()->user()?->canManage();
         $stateLabels = [
             'working' => 'Working Now',
             'done'    => 'Clocked Out',
@@ -101,6 +102,7 @@
                     >
                 </label>
 
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-att2-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
@@ -109,6 +111,7 @@
                         </option>
                     @endforeach
                 </select>
+                @endunless
 
                 <input type="date" name="work_date" value="{{ $workDate }}" class="rh-att2-date" @change="$refs.filterForm.requestSubmit()">
 

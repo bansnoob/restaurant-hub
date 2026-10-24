@@ -158,12 +158,14 @@
                     </svg>
                     <input type="text" name="search" value="{{ $filters['search'] }}" placeholder="Search by name or SKU…" x-on:input.debounce.350ms="$refs.filterForm.requestSubmit()">
                 </label>
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-inv-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
                         <option value="{{ $branch->id }}" {{ (string) $filters['branch_id'] === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
                     @endforeach
                 </select>
+                @endunless
                 <select name="category_id" class="rh-inv-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All sections</option>
                     @if (empty($filters['branch_id']) && $branches->count() > 1)
@@ -458,6 +460,9 @@
                         <button type="button" class="rm-drawer-close" @click="closeForm()">×</button>
                     </div>
                     <div class="rm-drawer-body">
+                        {{-- A template must keep one root element, so the whole block is skipped for a
+                             branch admin rather than emptied (Alpine throws on an empty x-if). --}}
+                        @unless ($lockedBranch)
                         <template x-if="form.mode === 'create'">
                             <div class="rm-field">
                                 <label class="rm-field-label">Branch</label>
@@ -469,6 +474,7 @@
                                 </select>
                             </div>
                         </template>
+                        @endunless
                         <div class="rm-field">
                             <label class="rm-field-label">Name</label>
                             <input type="text" name="name" class="rm-input" x-model="form.name" required maxlength="120">

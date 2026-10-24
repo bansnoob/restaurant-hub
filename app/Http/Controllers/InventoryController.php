@@ -61,7 +61,7 @@ class InventoryController extends Controller
 
     public function index(Request $request): View
     {
-        $branches = Branch::where('is_active', true)->orderBy('name')->get();
+        $branches = Branch::visibleTo($request->user())->where('is_active', true)->orderBy('name')->get();
 
         $branchFilter = $this->queryValue($request, 'branch_id');
         $branchId = $this->branchId($branchFilter);
@@ -91,7 +91,10 @@ class InventoryController extends Controller
         // branch so the headers can be told apart.
         $groups = $this->groupByCategory($ingredients, labelBranches: $branchId === null && $branches->count() > 1);
 
-        $allIngredients = Ingredient::with('branch')->orderBy('name')->get();
+        $allIngredients = Ingredient::with('branch')
+            ->when($request->user()->lockedBranchId(), fn ($q, $branchId) => $q->where('branch_id', $branchId))
+            ->orderBy('name')
+            ->get();
 
         // The banner, the stat strip and Recent Counts follow the branch filter, so a
         // filtered page never reports another branch's stock. Active-only, like the

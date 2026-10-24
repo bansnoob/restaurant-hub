@@ -51,6 +51,15 @@ class LoginRequest extends FormRequest
         }
 
         RateLimiter::clear($this->throttleKey());
+
+        // Right password, deactivated account (Users page): refuse, and say why.
+        if (Auth::user()->is_active === false) {
+            Auth::guard('web')->logout();
+
+            throw ValidationException::withMessages([
+                'email' => 'This account has been deactivated.',
+            ]);
+        }
     }
 
     /**

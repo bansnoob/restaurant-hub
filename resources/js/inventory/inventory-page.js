@@ -543,7 +543,9 @@ export function inventoryPage(config) {
             }
         },
         openCreate() {
-            this.form = emptyForm();
+            // Start on the filtered branch, or the only one there is, so its own
+            // categories are offered (a branch admin has no branch picker at all).
+            this.form = { ...emptyForm(), branch_id: this.defaultCountBranchId() };
             this.showNewCategory = false;
             this.formOpen = true;
             this.submitting = false;

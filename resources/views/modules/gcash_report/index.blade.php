@@ -146,12 +146,14 @@
              form, and a native handler keeps working regardless of component scope. --}}
         <form method="GET" action="{{ route('gcash-report.index') }}" class="rh-pay-toolbar">
             <div class="rh-pay-toolbar-row">
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-pay-select" onchange="this.form.submit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
                         <option value="{{ $branch->id }}" {{ (string) $filters['branch_id'] === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
                     @endforeach
                 </select>
+                @endunless
                 <span class="rh-att2-summary-picker-label">From</span>
                 <input type="date" name="date_from" value="{{ $filters['date_from'] }}" class="rh-att2-date" onchange="this.form.submit()">
                 <span class="rh-att2-summary-picker-label">To</span>
@@ -386,6 +388,7 @@
                     <div class="rm-drawer-body">
                         <p class="rh-gcash-hint">Deducts from GCash takings without touching the Sales or Expenses pages. Enter the amount to remove as a positive figure — it is subtracted for you. Safe to use on a day that is already closed: the closed day's signed-off totals are left untouched.</p>
                         <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            @unless ($lockedBranch)
                             <div class="rm-field">
                                 <label class="rm-field-label">Branch</label>
                                 <select name="branch_id" class="rm-input" x-model="adjustment.branch_id" required>
@@ -395,6 +398,7 @@
                                     @endforeach
                                 </select>
                             </div>
+                            @endunless
                             <div class="rm-field">
                                 <label class="rm-field-label">Date</label>
                                 <input type="date" name="adjustment_date" class="rm-input" x-model="adjustment.adjustment_date" required>
@@ -440,6 +444,7 @@
                     <div class="rm-drawer-body">
                         <p class="rh-gcash-hint">Records GCash money received outside the POS. It is saved as a completed GCash sale, so it also counts on the Sales page and toward the day's GCash total.</p>
                         <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            @unless ($lockedBranch)
                             <div class="rm-field">
                                 <label class="rm-field-label">Branch</label>
                                 <select name="branch_id" class="rm-input" x-model="record.branch_id" required>
@@ -449,6 +454,7 @@
                                     @endforeach
                                 </select>
                             </div>
+                            @endunless
                             <div class="rm-field">
                                 <label class="rm-field-label">Date</label>
                                 <input type="date" name="sale_date" class="rm-input" x-model="record.sale_date" required>
@@ -496,6 +502,7 @@
                     <div class="rm-drawer-body">
                         <p class="rh-gcash-hint">Saved as a GCash expense, so it also appears on the Expenses page.</p>
                         <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            @unless ($lockedBranch)
                             <div class="rm-field">
                                 <label class="rm-field-label">Branch</label>
                                 <select name="branch_id" class="rm-input" x-model="expense.branch_id" required>
@@ -505,6 +512,7 @@
                                     @endforeach
                                 </select>
                             </div>
+                            @endunless
                             <div class="rm-field">
                                 <label class="rm-field-label">Date</label>
                                 <input type="date" name="expense_date" class="rm-input" x-model="expense.expense_date" required>
@@ -581,6 +589,7 @@
                     </div>
                     <div class="rm-drawer-body">
                         <p class="rh-gcash-hint">The balance in the GCash account on the day you started tracking it here. Entries dated before that day are treated as already included in it, so turning this on part-way through does not double-count.</p>
+                        @unless ($lockedBranch)
                         <div class="rm-field">
                             <label class="rm-field-label">Branch</label>
                             {{-- Re-sync on change: each branch has its own wallet, so switching
@@ -593,6 +602,7 @@
                                 @endforeach
                             </select>
                         </div>
+                        @endunless
                         <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
                             <div class="rm-field">
                                 <label class="rm-field-label">Balance on that day <span class="rm-field-opt">(₱)</span></label>

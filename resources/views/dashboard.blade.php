@@ -313,9 +313,9 @@
             <div class="rh-dash-panel">
                 <div class="rh-dash-panel-header">
                     <p class="rh-dash-panel-title">{{ now()->format('F Y') }}</p>
-                    @role('owner')
+                    @hasanyrole('owner|admin')
                         <a href="{{ route('special-expenses.index') }}" class="rh-dash-panel-link">Overhead</a>
-                    @endrole
+                    @endhasanyrole
                 </div>
                 {{-- Four figures, not three. "Net" here is net AFTER overhead, so it is
                      the only true-profit number on this page: revenue less daily
@@ -356,9 +356,9 @@
                 @else
                     <p class="rh-dash-oh-empty">
                         No overhead recorded for {{ now()->format('F') }}
-                        @role('owner')
+                        @hasanyrole('owner|admin')
                             · <a href="{{ route('special-expenses.index') }}">add rent or electricity</a>
-                        @endrole
+                        @endhasanyrole
                     </p>
                 @endif
             </div>
@@ -489,6 +489,7 @@
                                            x-model="selectedDate" @change="reloadPreview()">
                                 </div>
 
+                                @unless ($lockedBranch)
                                 <div class="rm-field">
                                     <label class="rm-field-label">Branch</label>
                                     <select class="rm-input" x-model.number="selectedBranchId" @change="reloadPreview()">
@@ -499,6 +500,7 @@
                                         </template>
                                     </select>
                                 </div>
+                                @endunless
 
                                 <div class="rh-close-breakdown">
                                     <div class="rh-close-line">

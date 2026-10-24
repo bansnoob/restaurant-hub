@@ -150,6 +150,7 @@
                     >
                 </label>
 
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-sal-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
@@ -158,6 +159,7 @@
                         </option>
                     @endforeach
                 </select>
+                @endunless
 
                 <select name="category_id" class="rh-sal-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All categories</option>

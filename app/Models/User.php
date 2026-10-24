@@ -27,6 +27,7 @@ class User extends Authenticatable
         'email',
         'password',
         'branch_id',
+        'is_active',
     ];
 
     /**
@@ -49,6 +50,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
 
@@ -77,6 +79,44 @@ class User extends Authenticatable
         $branchId = $this->resolveBranchId();
 
         return $branchId === null ? null : Branch::find($branchId);
+    }
+
+    /** The `owner` role: every branch, every tab, the Branches and Users pages. */
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole('owner');
+    }
+
+    /** Runs one branch from the website and the POS, locked to that branch. */
+    public function isBranchAdmin(): bool
+    {
+        return ! $this->isSuperAdmin() && $this->hasRole('admin');
+    }
+
+    /** May use the website's management tabs (a super admin or a branch admin). */
+    public function canManage(): bool
+    {
+        return $this->hasAnyRole(['owner', 'admin']);
+    }
+
+    /**
+     * The one branch this user is confined to, or null for the super admin, who
+     * sees every branch. A branch admin's comes from users.branch_id.
+     */
+    public function lockedBranchId(): ?int
+    {
+        return $this->isSuperAdmin() ? null : $this->resolveBranchId();
+    }
+
+    /** How the role reads on screen. */
+    public function roleLabel(): string
+    {
+        return match (true) {
+            $this->isSuperAdmin() => 'Super Admin',
+            $this->hasRole('admin') => 'Admin',
+            $this->hasRole('cashier') => 'Cashier',
+            default => 'No role',
+        };
     }
 
     /**

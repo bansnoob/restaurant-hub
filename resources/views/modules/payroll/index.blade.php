@@ -140,12 +140,14 @@
                     </svg>
                     <input type="text" name="search" value="{{ $filters['search'] }}" placeholder="Search by employee or code…" x-on:input.debounce.350ms="$refs.filterForm.requestSubmit()">
                 </label>
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-pay-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
                         <option value="{{ $branch->id }}" {{ (string) $filters['branch_id'] === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
                     @endforeach
                 </select>
+                @endunless
                 <div class="rh-pay-status-chips">
                     <a href="{{ route('payroll.index', array_merge(request()->except(['status', 'page']), ['status' => ''])) }}" class="rh-pay-chip {{ $filters['status'] === '' ? 'rh-pay-chip--on' : '' }}">All</a>
                     <a href="{{ route('payroll.index', array_merge(request()->except(['page']), ['status' => 'draft'])) }}" class="rh-pay-chip {{ $filters['status'] === 'draft' ? 'rh-pay-chip--on' : '' }}">Draft</a>
@@ -254,6 +256,7 @@
                         <button type="button" class="rm-drawer-close" @click="rulesOpen = false">×</button>
                     </div>
                     <div class="rm-drawer-body">
+                        @unless ($lockedBranch)
                         <div class="rm-field">
                             <label class="rm-field-label">Branch</label>
                             <select name="branch_id" class="rm-input" x-model="rulesForm.branch_id" @change="loadBranchRules()" required>
@@ -263,6 +266,7 @@
                                 @endforeach
                             </select>
                         </div>
+                        @endunless
 
                         <div class="rh-pay-rules-diagram">
                             <strong>Deduction Tiers</strong> · From required time-in onward:<br>
@@ -435,6 +439,7 @@
                                 <input type="date" name="end_date" class="rm-input" x-model="bulkForm.end_date" required>
                             </div>
                         </div>
+                        @unless ($lockedBranch)
                         <div class="rm-field">
                             <label class="rm-field-label">Filter by Branch <span class="rm-field-opt">(visual filter only)</span></label>
                             <select class="rm-input" x-model="bulkBranchFilter">
@@ -444,6 +449,7 @@
                                 @endforeach
                             </select>
                         </div>
+                        @endunless
                         {{-- The ticked list is submitted, not the visible checkboxes: the branch
                              filter above hides rows, and a hidden row's tick must still count. --}}
                         <template x-for="id in selectedEmployeeIds" :key="id">
