@@ -158,12 +158,14 @@
                     </svg>
                     <input type="text" name="search" value="{{ $filters['search'] }}" placeholder="Search by name or SKU…" x-on:input.debounce.350ms="$refs.filterForm.requestSubmit()">
                 </label>
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-inv-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
                         <option value="{{ $branch->id }}" {{ (string) $filters['branch_id'] === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
                     @endforeach
                 </select>
+                @endunless
                 <select name="category_id" class="rh-inv-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All sections</option>
                     @if (empty($filters['branch_id']) && $branches->count() > 1)
@@ -459,6 +461,7 @@
                     </div>
                     <div class="rm-drawer-body">
                         <template x-if="form.mode === 'create'">
+                            @unless ($lockedBranch)
                             <div class="rm-field">
                                 <label class="rm-field-label">Branch</label>
                                 <select name="branch_id" class="rm-input" x-model="form.branch_id" required>
@@ -468,6 +471,7 @@
                                     @endforeach
                                 </select>
                             </div>
+                            @endunless
                         </template>
                         <div class="rm-field">
                             <label class="rm-field-label">Name</label>

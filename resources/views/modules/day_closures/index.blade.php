@@ -88,12 +88,14 @@
              so directives here sit outside any component scope and would never bind. --}}
         <form method="GET" action="{{ route('day-closures.index') }}" class="rh-pay-toolbar">
             <div class="rh-pay-toolbar-row">
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-pay-select" onchange="this.form.submit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
                         <option value="{{ $branch->id }}" {{ (string) $filters['branch_id'] === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
                     @endforeach
                 </select>
+                @endunless
                 <span class="rh-att2-summary-picker-label">From</span>
                 <input type="date" name="date_from" value="{{ $filters['date_from'] }}" class="rh-att2-date" onchange="this.form.submit()">
                 <span class="rh-att2-summary-picker-label">To</span>

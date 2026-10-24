@@ -102,6 +102,7 @@
                     >
                 </label>
 
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-att2-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
@@ -110,6 +111,7 @@
                         </option>
                     @endforeach
                 </select>
+                @endunless
 
                 <input type="date" name="work_date" value="{{ $workDate }}" class="rh-att2-date" @change="$refs.filterForm.requestSubmit()">
 

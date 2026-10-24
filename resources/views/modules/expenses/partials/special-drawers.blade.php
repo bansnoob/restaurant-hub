@@ -82,6 +82,7 @@
                     </div>
                     <div class="rm-drawer-body">
                         <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            @unless ($lockedBranch)
                             <div class="rm-field">
                                 {{-- Blank is a real, meaningful choice here, unlike the daily
                                      form where branch_id is required: overhead may cover the
@@ -94,6 +95,7 @@
                                     @endforeach
                                 </select>
                             </div>
+                            @endunless
                             <div class="rm-field">
                                 {{-- Options MUST be server-rendered, not built with x-for.
                                      x-model applies its value by selecting the matching option,

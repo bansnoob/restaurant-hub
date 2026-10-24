@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Models\Branch;
 use App\Models\PayrollEntry;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\View;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -35,11 +37,18 @@ class LockToOwnBranch
         // role checks, so their profile page still works.
         $user = $request->user();
         if ($user === null || ! $user->isBranchAdmin()) {
+            // Set on every request, not only an admin's, so a value shared for one
+            // request can never linger into the next.
+            View::share('lockedBranch', null);
+
             return $next($request);
         }
 
         $branchId = $user->lockedBranchId();
         abort_unless($branchId, 403, 'Your account is not assigned to a branch. Ask the super admin to assign one.');
+
+        // The views hide every branch dropdown when this is set.
+        View::share('lockedBranch', Branch::find($branchId));
 
         foreach ($request->route()?->parameters() ?? [] as $value) {
             if ($value instanceof Model && ! $this->belongsTo($value, $branchId)) {

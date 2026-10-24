@@ -65,6 +65,21 @@ class BranchAdminAccessTest extends TestCase
         $this->actingAs($this->admin)->get($url)->assertOk();
     }
 
+    #[DataProvider('websiteTabs')]
+    public function test_a_branch_admin_gets_no_branch_dropdown(string $url): void
+    {
+        $html = $this->actingAs($this->admin)->get($url)->assertOk()->getContent();
+
+        $this->assertDoesNotMatchRegularExpression('/<select\b[^>]*(name="branch_id"|bulkBranchFilter|selectedBranchId)/', $html);
+    }
+
+    public function test_the_super_admin_keeps_the_branch_dropdowns(): void
+    {
+        foreach (['/sales', '/expenses', '/payroll', '/inventory', '/menu'] as $url) {
+            $this->assertMatchesRegularExpression('/<select\b[^>]*name="branch_id"/', $this->actingAs($this->superAdmin)->get($url)->getContent(), $url);
+        }
+    }
+
     public function test_branches_stay_super_admin_only(): void
     {
         $this->actingAs($this->admin)->get('/branches')->assertForbidden();

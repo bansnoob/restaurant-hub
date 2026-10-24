@@ -31,6 +31,7 @@
                         <div x-show="countError" class="rh-inv-detail-loading" style="padding: 0.75rem 1rem; color: var(--rh-danger-solid);" x-text="countError"></div>
 
                         <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            @unless ($lockedBranch)
                             <div class="rm-field">
                                 <label class="rm-field-label">Branch</label>
                                 {{-- A count belongs to ONE branch, so switching branch REFETCHES
@@ -44,6 +45,7 @@
                                     @endforeach
                                 </select>
                             </div>
+                            @endunless
                             <div class="rm-field">
                                 <label class="rm-field-label">Count Date</label>
                                 <input type="date" name="counted_at" class="rm-input" x-model="countDraft.counted_at" required>

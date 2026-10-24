@@ -489,6 +489,7 @@
                                            x-model="selectedDate" @change="reloadPreview()">
                                 </div>
 
+                                @unless ($lockedBranch)
                                 <div class="rm-field">
                                     <label class="rm-field-label">Branch</label>
                                     <select class="rm-input" x-model.number="selectedBranchId" @change="reloadPreview()">
@@ -499,6 +500,7 @@
                                         </template>
                                     </select>
                                 </div>
+                                @endunless
 
                                 <div class="rh-close-breakdown">
                                     <div class="rh-close-line">

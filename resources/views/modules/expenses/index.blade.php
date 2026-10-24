@@ -194,12 +194,14 @@
                         x-on:input.debounce.350ms="$refs.filterForm.requestSubmit()"
                     >
                 </label>
+                @unless ($lockedBranch)
                 <select name="branch_id" class="rh-exp-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All branches</option>
                     @foreach ($branches as $branch)
                         <option value="{{ $branch->id }}" {{ (string) $filters['branch_id'] === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
                     @endforeach
                 </select>
+                @endunless
                 <select name="expense_category_id" class="rh-exp-select" @change="$refs.filterForm.requestSubmit()">
                     <option value="">All categories</option>
                     @foreach ($categories as $category)
@@ -359,6 +361,7 @@
                     </div>
                     <div class="rm-drawer-body">
                         <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            @unless ($lockedBranch)
                             <div class="rm-field">
                                 <label class="rm-field-label">Branch</label>
                                 <select name="branch_id" class="rm-input" x-model="form.branch_id" required>
@@ -368,6 +371,7 @@
                                     @endforeach
                                 </select>
                             </div>
+                            @endunless
                             <div class="rm-field">
                                 <label class="rm-field-label">Date</label>
                                 <input type="date" name="expense_date" class="rm-input" x-model="form.expense_date" required>
