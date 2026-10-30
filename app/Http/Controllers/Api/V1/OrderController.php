@@ -83,9 +83,13 @@ class OrderController extends Controller
         $validated = $request->validate([
             'payment_method' => ['required', 'in:cash,gcash,mixed'],
             'paid_total' => ['required', 'numeric', 'min:0'],
-            'cash_amount' => ['nullable', 'numeric', 'min:0'],
-            'gcash_amount' => ['nullable', 'numeric', 'min:0'],
+            'cash_amount' => ['nullable', 'required_if:payment_method,mixed', 'numeric', 'min:0'],
+            'gcash_amount' => ['nullable', 'required_if:payment_method,mixed', 'numeric', 'min:0'],
         ]);
+
+        if ($validated['payment_method'] === 'mixed') {
+            $this->assertSplitCoversTheBill($sale, (float) $validated['cash_amount'], (float) $validated['gcash_amount']);
+        }
 
         $sale = $this->saleService->processPayment(
             $sale,
@@ -96,6 +100,28 @@ class OrderController extends Controller
         );
 
         return new SaleResource($sale->load('saleItems'));
+    }
+
+    /**
+     * A split payment's change comes back out of the drawer, so its GCash part can
+     * never exceed the bill: the cash kept would be negative. The POS already blocks
+     * a split that falls short; this holds the same line for any other client.
+     */
+    private function assertSplitCoversTheBill(Sale $sale, float $cash, float $gcash): void
+    {
+        $due = (float) $sale->grand_total;
+
+        if (round($gcash, 2) > round($due, 2)) {
+            throw ValidationException::withMessages([
+                'gcash_amount' => 'In a split payment the GCash part cannot be more than the bill.',
+            ]);
+        }
+
+        if (round($cash + $gcash, 2) < round($due, 2)) {
+            throw ValidationException::withMessages([
+                'cash_amount' => 'The cash and GCash parts do not cover the bill.',
+            ]);
+        }
     }
 
     public function void(Sale $sale, Request $request): SaleResource

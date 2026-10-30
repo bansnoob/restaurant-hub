@@ -90,6 +90,14 @@ class SaleService
 
         $change = round($paidTotal - (float) $sale->grand_total, 2);
 
+        // A split payment's cash_amount is the cash the drawer KEEPS. The POS sends the
+        // cash handed over, and the change goes straight back out of the drawer, so
+        // storing it as-is counted change as a cash sale and made the day look short.
+        // What was handed over is still on the row: paid_total - gcash_amount.
+        if ($paymentMethod === 'mixed' && $gcashAmount !== null) {
+            $cashAmount = (float) $sale->grand_total - $gcashAmount;
+        }
+
         $sale->update([
             'paid_total' => round($paidTotal, 2),
             'change_total' => max(0, $change),
