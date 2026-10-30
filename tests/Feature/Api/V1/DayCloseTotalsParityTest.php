@@ -32,6 +32,8 @@ class DayCloseTotalsParityTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Midday: before 5am Close Day targets yesterday, and these tests close today.
+        $this->travelTo('2026-10-14 12:00:00');
         Role::findOrCreate('owner');
 
         $this->branch = Branch::factory()->create();

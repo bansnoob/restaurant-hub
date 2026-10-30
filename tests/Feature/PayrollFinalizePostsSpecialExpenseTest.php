@@ -159,9 +159,11 @@ class PayrollFinalizePostsSpecialExpenseTest extends TestCase
 
     public function test_it_records_the_paid_date_chosen_on_finalize(): void
     {
-        $this->finalize($this->entry(), ['paid_date' => '2026-09-10']);
+        $paidOn = now()->subDays(20)->toDateString();
 
-        $this->assertSame('2026-09-10', SpecialExpense::sole()->paid_date->toDateString());
+        $this->finalize($this->entry(), ['paid_date' => $paidOn]);
+
+        $this->assertSame($paidOn, SpecialExpense::sole()->paid_date->toDateString());
     }
 
     public function test_a_paid_date_in_the_future_is_rejected(): void

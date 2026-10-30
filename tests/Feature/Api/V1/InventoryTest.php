@@ -732,6 +732,9 @@ class InventoryTest extends TestCase
 
     public function test_the_summary_counts_low_stock_and_the_last_count_date(): void
     {
+        // Mid-month: on the 1st to 5th, a count 5 days ago is last month's.
+        $this->travelTo('2026-10-14 12:00:00');
+
         Ingredient::factory()->create([
             'branch_id' => $this->branch->id, 'current_stock' => 2, 'reorder_level' => 10,
         ]);
