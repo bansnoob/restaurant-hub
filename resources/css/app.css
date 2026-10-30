@@ -8156,15 +8156,29 @@ select.rm-input {
 
 .rh-cash-row-action[disabled] { opacity: 0.5; cursor: default; }
 
-/* Expense rows inside the Edit Day drawer. */
-.rh-cash-edit-sub {
-    margin-top: 0.3rem;
-    font-size: 0.78rem;
+/* Expense rows inside the Edit Day drawer: two lines each, so the description is
+   never squeezed out by the fixed-width fields beside it. */
+.rh-cash-edit-rows { display: flex; flex-direction: column; }
+
+.rh-cash-edit-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 7rem 2.25rem;
+    grid-template-areas:
+        "desc     desc     amount remove"
+        "vendor   category paid   paid";
+    gap: 0.4rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--rh-border);
 }
 
-.rh-cash-edit-table { width: 100%; border-collapse: collapse; }
-.rh-cash-edit-table td { padding: 0.25rem 0.25rem 0.25rem 0; vertical-align: middle; }
-.rh-cash-edit-table td:first-child { padding-left: 0; }
+.rh-cash-edit-row:first-child { padding-top: 0; }
+
+.rh-cash-edit-desc { grid-area: desc; }
+.rh-cash-edit-amount { grid-area: amount; }
+.rh-cash-edit-remove { grid-area: remove; justify-self: end; align-self: center; }
+.rh-cash-edit-vendor { grid-area: vendor; }
+.rh-cash-edit-category { grid-area: category; }
+.rh-cash-edit-paid-from { grid-area: paid; }
 
 .rm-drawer-foot {
     display: flex;
