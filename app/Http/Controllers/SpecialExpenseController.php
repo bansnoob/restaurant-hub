@@ -203,7 +203,10 @@ class SpecialExpenseController extends Controller
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'special_expense_category_id' => ['nullable', 'integer', 'exists:special_expense_categories,id'],
             'period_month' => ['required', 'date'],
-            'paid_date' => ['nullable', 'date'],
+            // Required: the Cash Report and the GCash wallet date a row by when its
+            // money moved. An undated row fell back to the 1st of its month, so a
+            // range starting mid-month dropped a cost that was paid inside it.
+            'paid_date' => ['required', 'date'],
             'description' => ['nullable', 'string', 'max:200'],
             'vendor_name' => ['nullable', 'string', 'max:140'],
             'reference_no' => ['nullable', 'string', 'max:60'],

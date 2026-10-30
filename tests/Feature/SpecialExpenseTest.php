@@ -47,6 +47,7 @@ class SpecialExpenseTest extends TestCase
         return array_merge([
             'branch_id' => $this->branch->id,
             'period_month' => now()->startOfMonth()->toDateString(),
+            'paid_date' => now()->toDateString(),
             'description' => 'Monthly rent',
             'amount' => 40000,
             'payment_method' => 'bank_transfer',

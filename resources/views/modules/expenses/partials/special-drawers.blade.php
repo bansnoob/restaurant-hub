@@ -164,8 +164,8 @@
                                 <input type="text" name="vendor_name" class="rm-input" x-model="form.vendor_name" maxlength="140">
                             </div>
                             <div class="rm-field">
-                                <label class="rm-field-label">Paid on <span class="rm-field-opt">(optional)</span></label>
-                                <input type="date" name="paid_date" class="rm-input" x-model="form.paid_date">
+                                <label class="rm-field-label">Paid on</label>
+                                <input type="date" name="paid_date" class="rm-input" x-model="form.paid_date" required>
                             </div>
                         </div>
                         <div class="rm-field">

@@ -202,6 +202,7 @@
                     destroyUrlTemplate: @js(route('special-expenses.destroy', ['specialExpense' => '__SPECIAL__'])),
                     csrfToken: @js(csrf_token()),
                     currentMonth: @js(\Carbon\Carbon::parse($filters['date_to'])->startOfMonth()->toDateString()),
+                    today: @js(now()->toDateString()),
                  })"
                  @keydown.escape.window="closeAll()">
 
