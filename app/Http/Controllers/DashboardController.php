@@ -168,7 +168,9 @@ class DashboardController extends Controller
         )->pluck('name', 'id');
 
         // ── Today's closures, one row per branch ──────────────────────────
-        $branchClosures = $this->branchClosures($today, $branchId);
+        // The day Close Day closes, not the calendar date: before 5am that is last
+        // night, and this card must agree with the button it sits beside.
+        $branchClosures = $this->branchClosures(DayClosure::defaultCloseDate(), $branchId);
 
         return view('dashboard', compact(
             'activeEmployees',

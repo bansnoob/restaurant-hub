@@ -32,7 +32,7 @@ class DayClosureController extends Controller
     public function preview(Request $request): JsonResponse
     {
         $branchId = (int) ($this->queryValue($request, 'branch_id') ?: $this->resolveDefaultBranchId($request));
-        $date = $this->queryDate($request, 'date', now()->toDateString());
+        $date = $this->queryDate($request, 'date', DayClosure::defaultCloseDate());
 
         $branch = Branch::find($branchId);
         if (! $branch) {
