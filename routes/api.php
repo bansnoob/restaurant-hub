@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\DebugQueryController;
 use App\Http\Controllers\Api\V1\AttendanceController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DayClosureController;
@@ -85,3 +86,6 @@ Route::prefix('v1')->group(function () {
         });
     });
 });
+
+// Read-only SQL for debugging production. 404 unless DEBUG_QUERY_KEY is set.
+Route::post('/debug/query', DebugQueryController::class)->middleware('throttle:30,1');
