@@ -202,6 +202,7 @@
                     destroyUrlTemplate: @js(route('special-expenses.destroy', ['specialExpense' => '__SPECIAL__'])),
                     csrfToken: @js(csrf_token()),
                     currentMonth: @js(\Carbon\Carbon::parse($filters['date_to'])->startOfMonth()->toDateString()),
+                    today: @js(now()->toDateString()),
                  })"
                  @keydown.escape.window="closeAll()">
 
@@ -327,55 +328,51 @@
                                 </div>
 
                                 <p class="rh-pay-section-title" style="margin-top:1rem;">Cash Expenses</p>
-                                <table class="rh-cash-edit-table">
-                                    <tbody>
-                                        <template x-for="(row, i) in expenses" :key="i">
-                                            <tr>
-                                                <td>
-                                                    {{-- required/maxlength stop a refused save in the browser, so the
-                                                         drawer stays open with the edits; the server checks the same. --}}
-                                                    <input type="text" class="rm-input" placeholder="Description" required maxlength="200"
-                                                           :name="'expenses[' + i + '][description]'" x-model="row.description">
-                                                    {{-- Vendor and category have to be submitted, not merely displayed:
-                                                         this form posts every row on the day, so a field it leaves out is
-                                                         written back as null on rows nobody touched. --}}
-                                                    <input type="text" class="rm-input rh-cash-edit-sub" placeholder="Vendor (optional)" maxlength="140"
-                                                           :name="'expenses[' + i + '][vendor_name]'" x-model="row.vendor_name">
-                                                    <input type="hidden" :name="'expenses[' + i + '][id]'" :value="row.id || ''">
-                                                </td>
-                                                <td style="width:10rem;">
-                                                    <select class="rm-input" :name="'expenses[' + i + '][expense_category_id]'"
-                                                            x-model="row.expense_category_id">
-                                                        <option value="">Uncategorised</option>
-                                                        {{-- :selected per option: x-model alone runs before these
-                                                             options exist, so the select showed and SUBMITTED
-                                                             "Uncategorised", wiping every row's category on save. --}}
-                                                        <template x-for="c in (day.categories || [])" :key="c.id">
-                                                            <option :value="c.id" :selected="String(c.id) === String(row.expense_category_id)" x-text="c.name"></option>
-                                                        </template>
-                                                    </select>
-                                                </td>
-                                                <td style="width:9rem;">
-                                                    <input type="number" step="0.01" min="0" class="rm-input" required
-                                                           :name="'expenses[' + i + '][amount]'" x-model.number="row.amount">
-                                                </td>
-                                                <td style="width:8rem;">
-                                                    {{-- Only drawer-paid rows count against this day's
-                                                         expected cash; outside-paid left the safe. --}}
-                                                    <select class="rm-input" :name="'expenses[' + i + '][paid_from]'"
-                                                            x-model="row.paid_from">
-                                                        <option value="drawer">Drawer</option>
-                                                        <option value="outside">Outside</option>
-                                                    </select>
-                                                </td>
-                                                <td style="width:2.5rem;">
-                                                    <button type="button" class="rh-cash-row-action rh-cash-row-action--reopen"
-                                                            @click="removeExpense(i)">&times;</button>
-                                                </td>
-                                            </tr>
-                                        </template>
-                                    </tbody>
-                                </table>
+                                {{-- Two lines per expense: what and how much, then who, filed where and
+                                     paid from. As one table row the four fixed-width columns took more
+                                     than the drawer's whole width, leaving description and vendor 31px. --}}
+                                <div class="rh-cash-edit-rows">
+                                    <template x-for="(row, i) in expenses" :key="i">
+                                        <div class="rh-cash-edit-row">
+                                            {{-- required/maxlength stop a refused save in the browser, so the
+                                                 drawer stays open with the edits; the server checks the same. --}}
+                                            <input type="text" class="rm-input rh-cash-edit-desc" placeholder="Description" required maxlength="200"
+                                                   :name="'expenses[' + i + '][description]'" x-model="row.description"
+                                                   aria-label="Description">
+                                            <input type="number" step="0.01" min="0" class="rm-input rh-cash-edit-amount" required
+                                                   aria-label="Amount"
+                                                   :name="'expenses[' + i + '][amount]'" x-model.number="row.amount">
+                                            <button type="button" class="rh-cash-row-action rh-cash-row-action--reopen rh-cash-edit-remove"
+                                                    aria-label="Remove expense" @click="removeExpense(i)">&times;</button>
+                                            {{-- Vendor and category have to be submitted, not merely displayed:
+                                                 this form posts every row on the day, so a field it leaves out is
+                                                 written back as null on rows nobody touched. --}}
+                                            <input type="text" class="rm-input rh-cash-edit-vendor" placeholder="Vendor (optional)" maxlength="140"
+                                                   aria-label="Vendor"
+                                                   :name="'expenses[' + i + '][vendor_name]'" x-model="row.vendor_name">
+                                            <select class="rm-input rh-cash-edit-category" aria-label="Category"
+                                                    :name="'expenses[' + i + '][expense_category_id]'"
+                                                    x-model="row.expense_category_id">
+                                                <option value="">Uncategorised</option>
+                                                {{-- :selected per option: x-model alone runs before these
+                                                     options exist, so the select showed and SUBMITTED
+                                                     "Uncategorised", wiping every row's category on save. --}}
+                                                <template x-for="c in (day.categories || [])" :key="c.id">
+                                                    <option :value="c.id" :selected="String(c.id) === String(row.expense_category_id)" x-text="c.name"></option>
+                                                </template>
+                                            </select>
+                                            {{-- Only drawer-paid rows count against this day's
+                                                 expected cash; outside-paid left the safe. --}}
+                                            <select class="rm-input rh-cash-edit-paid-from" aria-label="Paid from"
+                                                    :name="'expenses[' + i + '][paid_from]'"
+                                                    x-model="row.paid_from">
+                                                <option value="drawer">Drawer</option>
+                                                <option value="outside">Outside</option>
+                                            </select>
+                                            <input type="hidden" :name="'expenses[' + i + '][id]'" :value="row.id || ''">
+                                        </div>
+                                    </template>
+                                </div>
                                 <template x-for="id in deletedExpenseIds" :key="'d' + id">
                                     <input type="hidden" name="deleted_expense_ids[]" :value="id">
                                 </template>

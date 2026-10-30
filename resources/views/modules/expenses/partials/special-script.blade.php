@@ -2,6 +2,8 @@
      hosts them. --}}
     <script>
         function specialExpensesPage(config) {
+            // A new row starts paid today. An edited row keeps its own date, and an old
+            // undated one stays blank so it is dated on purpose, not stamped today.
             const blankForm = (month) => ({
                 mode: 'create',
                 action: '',
@@ -9,7 +11,7 @@
                 special_expense_category_id: '',
                 new_category_name: '',
                 period_month: month,
-                paid_date: '',
+                paid_date: config.today,
                 description: '',
                 vendor_name: '',
                 reference_no: '',

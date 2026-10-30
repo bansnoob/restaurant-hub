@@ -42,6 +42,21 @@ class DayClosure extends Model
         'variance' => 'decimal:2',
     ];
 
+    /**
+     * Until this hour, Close Day targets yesterday. A close at 12:30am is the night
+     * before being closed, not the new day: filed under the new date, the real day
+     * stayed "Not closed" and the next night's close was refused as already done.
+     */
+    public const DAY_ROLLS_OVER_AT_HOUR = 5;
+
+    /** The day Close Day opens on when no date is asked for. */
+    public static function defaultCloseDate(): string
+    {
+        $now = now();
+
+        return ($now->hour < self::DAY_ROLLS_OVER_AT_HOUR ? $now->copy()->subDay() : $now)->toDateString();
+    }
+
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);

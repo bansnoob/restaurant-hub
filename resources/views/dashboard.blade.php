@@ -24,6 +24,7 @@
             storeUrl: @js(route('day-close.store')),
             csrfToken: @js(csrf_token()),
             today: @js(now()->toDateString()),
+            closeDate: @js(\App\Models\DayClosure::defaultCloseDate()),
             initialDate: @js(request()->query('close_date')),
             initialBranchId: @js(request()->query('close_branch_id')),
         })"
@@ -454,7 +455,7 @@
 
                         <template x-if="data && data.already_closed">
                             <div class="rh-close-already">
-                                <h3 class="rh-close-already-title">Already closed today</h3>
+                                <h3 class="rh-close-already-title">Already closed</h3>
                                 <p class="rh-close-already-meta">
                                     Closed at <span x-text="data.already_closed.closed_at_label"></span>
                                     <span x-show="data.already_closed.closed_by"> by <span x-text="data.already_closed.closed_by"></span></span>
@@ -567,6 +568,7 @@
                 storeUrl: config.storeUrl,
                 csrfToken: config.csrfToken,
                 today: config.today,
+                closeDate: config.closeDate,
                 initialDate: config.initialDate || '',
                 initialBranchId: config.initialBranchId || '',
                 drawerOpen: false,
@@ -588,7 +590,7 @@
                     this.data = null;
                     this.countedCash = '';
                     this.notes = '';
-                    this.selectedDate = options.date || this.today;
+                    this.selectedDate = options.date || this.closeDate;
                     if (options.branchId) this.selectedBranchId = options.branchId;
                     await this.loadPreview();
                 },

@@ -157,6 +157,45 @@ class PayrollFinalizePostsSpecialExpenseTest extends TestCase
         $this->assertSame('bank_transfer', SpecialExpense::sole()->payment_method);
     }
 
+    public function test_it_records_the_paid_date_chosen_on_finalize(): void
+    {
+        $this->finalize($this->entry(), ['paid_date' => '2026-09-10']);
+
+        $this->assertSame('2026-09-10', SpecialExpense::sole()->paid_date->toDateString());
+    }
+
+    public function test_a_paid_date_in_the_future_is_rejected(): void
+    {
+        $this->finalize($this->entry(), ['paid_date' => now()->addDay()->toDateString()])
+            ->assertSessionHasErrors('paid_date');
+
+        $this->assertSame(0, SpecialExpense::count());
+    }
+
+    /**
+     * The controller always accepted a method; the page never sent one. So every
+     * wage became a cash payment, and the Cash Report subtracted GCash and bank
+     * wages from cash nobody had spent. The form that finalizes must carry both.
+     */
+    public function test_the_only_finalize_form_asks_how_and_when_the_wage_was_paid(): void
+    {
+        $this->entry();
+
+        $html = $this->actingAs($this->owner)->get(route('payroll.index'))->assertOk()->getContent();
+
+        $this->assertSame(1, substr_count($html, 'action="'.route('payroll.finalize').'"'));
+
+        $form = substr($html, strpos($html, 'action="'.route('payroll.finalize').'"'));
+        $form = substr($form, 0, strpos($form, '</form>'));
+
+        $this->assertStringContainsString('name="payment_method"', $form);
+        foreach (SpecialExpense::PAYMENT_METHODS as $method) {
+            $this->assertStringContainsString('value="'.$method.'"', $form);
+        }
+        $this->assertStringContainsString('name="paid_date"', $form);
+        $this->assertStringContainsString('name="payroll_entry_id"', $form);
+    }
+
     public function test_an_unknown_payment_method_is_rejected(): void
     {
         $this->finalize($this->entry(), ['payment_method' => 'crypto'])
