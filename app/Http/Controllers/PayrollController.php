@@ -305,6 +305,7 @@ class PayrollController extends Controller
         $validated = $request->validate([
             'payroll_entry_id' => ['required', 'integer', 'exists:payroll_entries,id'],
             'payment_method' => ['nullable', Rule::in(SpecialExpense::PAYMENT_METHODS)],
+            'paid_date' => ['nullable', 'date', 'before_or_equal:today'],
         ]);
 
         $entry = PayrollEntry::with(['payrollPeriod', 'employee', 'specialExpense'])
@@ -326,7 +327,11 @@ class PayrollController extends Controller
                 $period->update(['processed_at' => now()]);
             }
 
-            $this->postWageToOverhead($entry, $validated['payment_method'] ?? 'cash');
+            $this->postWageToOverhead(
+                $entry,
+                $validated['payment_method'] ?? 'cash',
+                $validated['paid_date'] ?? Carbon::now()->toDateString()
+            );
         });
 
         return back()->with('success', 'Payroll report finalized, locked and posted to overhead.');
@@ -342,7 +347,7 @@ class PayrollController extends Controller
      * Dated to the month the pay period ENDS in — the month the wage belongs to —
      * while paid_date carries the day it was actually settled.
      */
-    private function postWageToOverhead(PayrollEntry $entry, string $paymentMethod): void
+    private function postWageToOverhead(PayrollEntry $entry, string $paymentMethod, string $paidDate): void
     {
         if ($entry->specialExpense) {
             return;
@@ -371,7 +376,7 @@ class PayrollController extends Controller
             'period_month' => ($period
                 ? Carbon::parse($period->end_date)
                 : Carbon::now())->startOfMonth()->toDateString(),
-            'paid_date' => Carbon::now()->toDateString(),
+            'paid_date' => $paidDate,
             'description' => $employeeName.' ('.$periodLabel.')',
             'amount' => round((float) $entry->net_pay, 2),
             'payment_method' => $paymentMethod,

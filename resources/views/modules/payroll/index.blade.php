@@ -4,6 +4,15 @@
     </x-slot>
 
     @php
+        // Every method a wage can be paid with. Server-rendered into the Finalize
+        // select, never x-for: x-model binds before x-for renders and would fall back
+        // to the first option.
+        $paymentMethodLabels = [
+            'cash' => 'Cash',
+            'gcash' => 'GCash',
+            'bank_transfer' => 'Bank transfer',
+            'other' => 'Other',
+        ];
         $defaultRules = [
             'standard_daily_hours' => '8',
             'required_clock_in_time' => '09:00',
@@ -220,14 +229,14 @@
                                     </a>
                                 @endif
                                 @if ($report->status === 'draft')
-                                    <form method="POST" action="{{ route('payroll.finalize') }}">
-                                        @csrf
-                                        <input type="hidden" name="payroll_entry_id" value="{{ $report->id }}">
-                                        <button type="submit" class="is-success">
-                                            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                            Finalize
-                                        </button>
-                                    </form>
+                                    <button type="button" class="is-success"
+                                            @click="open = false; openFinalize(@js([
+                                                'id' => $report->id,
+                                                'summary' => (trim(($employee?->first_name ?? '').' '.($employee?->last_name ?? '')) ?: 'Unknown').' · '.$startLabel.' – '.$endLabel.' · ₱'.number_format((float) $report->net_pay, 2),
+                                            ]))">
+                                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                        Finalize
+                                    </button>
                                     <hr>
                                     <form method="POST" action="{{ route('payroll.reports.destroy', $report) }}" onsubmit="return confirm('Delete this payroll report? This cannot be undone.');">
                                         @csrf
@@ -245,6 +254,46 @@
             </div>
             <div class="rh-pay-pagination">{{ $reports->links() }}</div>
         @endif
+
+        {{-- Finalize drawer. The wage is posted to overhead exactly as paid here, and the
+             Cash Report subtracts only cash rows, so a GCash or bank wage must be named as
+             one rather than silently filed as cash. --}}
+        <template x-if="finalizeOpen">
+            <div class="rm-overlay" @click.self="finalizeOpen = false">
+                <form method="POST" action="{{ route('payroll.finalize') }}" class="rm-drawer">
+                    @csrf
+                    <input type="hidden" name="payroll_entry_id" :value="finalizeForm.payroll_entry_id">
+                    <div class="rm-drawer-head">
+                        <h2 class="rm-drawer-title">Finalize Payroll</h2>
+                        <button type="button" class="rm-drawer-close" @click="finalizeOpen = false">×</button>
+                    </div>
+                    <div class="rm-drawer-body">
+                        <p class="rm-field-hint" x-text="finalizeForm.summary"></p>
+                        <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            <div class="rm-field">
+                                <label class="rm-field-label">Paid with</label>
+                                <select name="payment_method" class="rm-input" x-model="finalizeForm.payment_method" required>
+                                    @foreach ($paymentMethodLabels as $value => $label)
+                                        <option value="{{ $value }}">{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="rm-field">
+                                <label class="rm-field-label">Paid on</label>
+                                <input type="date" name="paid_date" class="rm-input" x-model="finalizeForm.paid_date" max="{{ now()->toDateString() }}" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="rm-drawer-foot">
+                        <div></div>
+                        <div class="rm-drawer-foot-right">
+                            <button type="button" class="rm-btn rm-btn--ghost" @click="finalizeOpen = false">Cancel</button>
+                            <button type="submit" class="rm-btn rm-btn--primary">Finalize</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </template>
 
         {{-- Rules drawer --}}
         <template x-if="rulesOpen">
@@ -498,6 +547,8 @@
                 rulesOpen: false,
                 singleOpen: false,
                 bulkOpen: false,
+                finalizeOpen: false,
+                finalizeForm: { payroll_entry_id: '', summary: '', payment_method: 'cash', paid_date: config.today },
                 rulesForm: { ...config.defaultRules, branch_id: '' },
                 singleForm: { employee_id: '', start_date: '', end_date: config.today },
                 bulkForm: { start_date: '', end_date: config.today },
@@ -524,6 +575,15 @@
                 openSingle() {
                     this.singleForm = { employee_id: '', start_date: '', end_date: config.today };
                     this.singleOpen = true;
+                },
+                openFinalize(report) {
+                    this.finalizeForm = {
+                        payroll_entry_id: report.id,
+                        summary: report.summary,
+                        payment_method: 'cash',
+                        paid_date: config.today,
+                    };
+                    this.finalizeOpen = true;
                 },
                 openBulk() {
                     this.bulkForm = { start_date: '', end_date: config.today };
@@ -554,6 +614,7 @@
                     this.rulesOpen = false;
                     this.singleOpen = false;
                     this.bulkOpen = false;
+                    this.finalizeOpen = false;
                 },
             };
         }
