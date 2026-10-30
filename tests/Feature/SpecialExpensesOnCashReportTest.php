@@ -28,6 +28,9 @@ class SpecialExpensesOnCashReportTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Mid-month: the default window is the last 30 days, so on the 31st this
+        // month's 1st (where an unpaid row dates) falls outside it.
+        $this->travelTo('2026-10-14 12:00:00');
         Role::findOrCreate('owner');
         Role::findOrCreate('cashier');
 

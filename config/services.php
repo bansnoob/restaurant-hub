@@ -28,6 +28,17 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // Read-only SQL over HTTP for debugging production (POST /api/debug/query).
+    // Off unless DEBUG_QUERY_KEY is set, and it runs only on the separate
+    // SELECT-only user of the mysql_readonly connection.
+    'debug_query' => [
+        'key' => env('DEBUG_QUERY_KEY'),
+        'connection' => 'mysql_readonly',
+        'max_rows' => 1000,
+        'max_cell_length' => 2000,
+        'timeout_ms' => 10000,
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

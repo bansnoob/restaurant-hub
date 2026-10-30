@@ -27,6 +27,8 @@ class DashboardBranchClosureTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Midday: before 5am the dashboard reports last night, and these tests close today.
+        $this->travelTo('2026-10-14 12:00:00');
         Role::findOrCreate('owner');
 
         $this->main = Branch::factory()->create(['name' => 'Main Branch']);
