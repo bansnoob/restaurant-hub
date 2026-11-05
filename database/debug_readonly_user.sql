@@ -14,6 +14,7 @@ CREATE USER 'claude_ro'@'localhost' IDENTIFIED BY 'CHANGE_ME'
 
 GRANT SELECT ON restaurant_hub.attendance_records TO 'claude_ro'@'localhost';
 GRANT SELECT ON restaurant_hub.branches TO 'claude_ro'@'localhost';
+GRANT SELECT ON restaurant_hub.cash_opening_balances TO 'claude_ro'@'localhost';
 GRANT SELECT ON restaurant_hub.day_closures TO 'claude_ro'@'localhost';
 GRANT SELECT ON restaurant_hub.employees TO 'claude_ro'@'localhost';
 GRANT SELECT ON restaurant_hub.employee_shift_assignments TO 'claude_ro'@'localhost';

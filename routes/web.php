@@ -159,6 +159,10 @@ Route::middleware(['auth', 'cashier.pos', 'branch.lock'])->group(function () {
     Route::put('/day-close/{dayClosure}', [DayClosureController::class, 'update'])
         ->middleware('role:owner|admin')
         ->name('day-close.update');
+    // The cash held when tracking began, which Cash on Hand counts forward from.
+    Route::put('/cash-report/opening-balance', [DayClosureController::class, 'updateOpeningBalance'])
+        ->middleware('role:owner|admin')
+        ->name('day-closures.opening-balance.update');
 
     // GCash report (read-only, built from individual GCash sales). Owner-only, like
     // every page in this group.

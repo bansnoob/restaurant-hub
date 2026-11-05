@@ -7,10 +7,12 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
+use App\Models\CashOpeningBalance;
 use App\Models\DayClosure;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\Sale;
+use App\Services\CashOnHandService;
 use App\Services\CashReportService;
 use App\Models\SpecialExpense;
 use App\Services\DayClosureRecalculator;
@@ -177,7 +179,7 @@ class DayClosureController extends Controller
         return back()->with('success', $message);
     }
 
-    public function index(Request $request, CashReportService $cashReport, SpecialExpenseOptions $options): View
+    public function index(Request $request, CashReportService $cashReport, CashOnHandService $cashOnHand, SpecialExpenseOptions $options): View
     {
         $branchFilter = $this->queryValue($request, 'branch_id');
         $dateFrom = $this->queryDate($request, 'date_from', now()->subDays(29)->toDateString());
@@ -219,7 +221,56 @@ class DayClosureController extends Controller
                 'date_to' => $dateTo,
             ],
             'special' => $special,
+            'cashBalance' => $cashOnHand->summary($branchId),
+            'cashOpeningDefaults' => $this->cashOpeningDefaults($branches),
+            'cashOpeningBranchId' => (string) ($branchId ?? $request->user()?->resolveBranchId() ?? $branches->first()?->id ?? ''),
         ], $special['form'] ?? []));
+    }
+
+    /**
+     * Each branch's own opening balance, to seed the drawer.
+     *
+     * Never seeded from the summary: on the all-branches view that holds a cross-branch
+     * total and no date, and saving it against one branch would overwrite a real figure.
+     *
+     * @return array<string, array{opening_balance: string, opening_date: string}>
+     */
+    private function cashOpeningDefaults($branches): array
+    {
+        $openings = CashOpeningBalance::whereIn('branch_id', $branches->pluck('id'))->get()->keyBy('branch_id');
+
+        return $branches->mapWithKeys(function (Branch $branch) use ($openings) {
+            $opening = $openings->get($branch->id);
+
+            return [(string) $branch->id => [
+                'opening_balance' => number_format((float) ($opening->opening_balance ?? 0), 2, '.', ''),
+                'opening_date' => $opening?->opening_date?->toDateString() ?? now()->toDateString(),
+            ]];
+        })->all();
+    }
+
+    /**
+     * Set (or move) the point Cash on Hand counts from. A branch admin's branch_id is
+     * forced to their own by LockToOwnBranch, so they cannot set another branch's.
+     */
+    public function updateOpeningBalance(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'opening_balance' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:99999999.99'],
+            'opening_date' => ['required', 'date', 'before_or_equal:today'],
+        ]);
+
+        CashOpeningBalance::updateOrCreate(
+            ['branch_id' => (int) $validated['branch_id']],
+            [
+                'opening_balance' => $validated['opening_balance'],
+                'opening_date' => $validated['opening_date'],
+                'updated_by_user_id' => $request->user()->id,
+            ]
+        );
+
+        return back()->with('success', 'Opening cash balance saved.');
     }
 
     /**

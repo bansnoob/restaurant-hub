@@ -15,8 +15,12 @@
             editUrlTemplate: @js(route('day-close.edit', ['dayClosure' => '__ID__'])),
             updateUrlTemplate: @js(route('day-close.update', ['dayClosure' => '__ID__'])),
             csrfToken: @js(csrf_token()),
+            cashOpeningBranchId: @js($cashOpeningBranchId),
+            {{-- Per branch, never the summary: on the all-branches view the summary holds a
+                 cross-branch total and no date, which must not be saved against one branch. --}}
+            cashOpeningDefaults: @js($cashOpeningDefaults),
          })"
-         @keydown.escape.window="closeEdit()">
+         @keydown.escape.window="closeEdit(); closeCashOpening()">
         @if (session('success'))
             <div class="rm-toast rm-toast--ok" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 2800)"><span>{{ session('success') }}</span></div>
         @endif
@@ -39,6 +43,59 @@
                         · <span class="rh-cash-gap-count">{{ $totals['days_unclosed'] }} not closed</span>
                     @endif
                 </p>
+            </div>
+        </div>
+
+        {{-- Cash on Hand. Outside the stats strip on purpose: those tiles describe the
+             selected dates, this is a running balance that ignores them. It borrows the
+             GCash Report's balance card, which shows the same kind of figure. --}}
+        <div class="rh-gcash-wallet">
+            <div class="rh-gcash-wallet-main">
+                <p class="rh-gcash-wallet-label">
+                    Cash on Hand
+                    · {{ $filters['branch_id'] ? $branches->firstWhere('id', (int) $filters['branch_id'])?->name : 'all branches' }}
+                </p>
+                <p class="rh-gcash-wallet-value {{ $cashBalance['balance'] < 0 ? 'rh-gcash-wallet-value--warn' : '' }}">
+                    {{ $cashBalance['balance'] < 0 ? '−' : '' }}₱{{ number_format(abs($cashBalance['balance']), 2) }}
+                </p>
+                <p class="rh-gcash-wallet-sub">
+                    @if ($cashBalance['configured'])
+                        Opening ₱{{ number_format($cashBalance['opening_balance'], 2) }}
+                        @if ($cashBalance['opening_date'])
+                            on {{ \Carbon\Carbon::parse($cashBalance['opening_date'])->format('M j, Y') }}
+                        @elseif ($cashBalance['scope_count'] > 1)
+                            across {{ $cashBalance['scope_count'] }} branches
+                        @endif
+                        · taken ₱{{ number_format($cashBalance['taken'], 2) }}
+                        · paid outside drawer ₱{{ number_format($cashBalance['paid_outside'], 2) }}
+                        @if (abs($cashBalance['company_wide_overhead']) > 0.001)
+                            {{-- Named on its own: it belongs to no branch, so no line below has it. --}}
+                            · incl. company-wide overhead ₱{{ number_format($cashBalance['company_wide_overhead'], 2) }}
+                        @endif
+                    @elseif ($cashBalance['unconfigured_count'] < $cashBalance['scope_count'])
+                        Partly set — {{ $cashBalance['unconfigured_count'] }} of {{ $cashBalance['scope_count'] }} branches have no opening balance, so those count every closed day.
+                    @else
+                        Takings so far — set an opening balance so this matches the cash you hold.
+                    @endif
+                    · counts closed days only
+                </p>
+            </div>
+            <div class="rh-gcash-wallet-side">
+                @if (! $filters['branch_id'] && count($cashBalance['per_branch']) > 1)
+                    <ul class="rh-gcash-wallet-breakdown">
+                        @foreach ($cashBalance['per_branch'] as $row)
+                            <li>
+                                <span>{{ $row['name'] }}</span>
+                                <span>{{ $row['balance'] < 0 ? '−' : '' }}₱{{ number_format(abs($row['balance']), 2) }}</span>
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+                @if ($isOwner)
+                    <button type="button" class="rm-btn rm-btn--ghost" @click="openCashOpening()">
+                        {{ $cashBalance['configured'] ? 'Opening balance' : 'Set opening balance' }}
+                    </button>
+                @endif
             </div>
         </div>
 
@@ -417,6 +474,54 @@
                 </form>
             </div>
         </template>
+
+        {{-- Opening cash balance drawer --}}
+        <template x-if="cashOpeningOpen">
+            <div class="rm-overlay" @click.self="closeCashOpening()">
+                <form method="POST" action="{{ route('day-closures.opening-balance.update') }}" class="rm-drawer" @submit="cashOpeningSaving = true">
+                    @csrf
+                    <input type="hidden" name="_method" value="PUT">
+                    <div class="rm-drawer-head">
+                        <h2 class="rm-drawer-title">Opening Cash Balance</h2>
+                        <button type="button" class="rm-drawer-close" @click="closeCashOpening()">&times;</button>
+                    </div>
+                    <div class="rm-drawer-body">
+                        <p class="rh-gcash-hint">The cash you were holding at the start of that day, counted by hand, leaving out the till's change float. Every day closed from then on is added to it, and cash paid outside the drawer is taken off. Anything earlier is treated as already included.</p>
+                        @unless ($lockedBranch)
+                        <div class="rm-field">
+                            <label class="rm-field-label">Branch</label>
+                            {{-- Re-sync on change: each branch has its own balance, so switching
+                                 must not leave the previous branch's figures in the fields. --}}
+                            <select name="branch_id" class="rm-input" x-model="cashOpeningForm.branch_id"
+                                    @change="syncCashOpeningForm($event.target.value)" required>
+                                <option value="">Select branch</option>
+                                @foreach ($branches as $branch)
+                                    <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        @endunless
+                        <div class="rm-field-row" style="grid-template-columns: 1fr 1fr;">
+                            <div class="rm-field">
+                                <label class="rm-field-label">Cash held <span class="rm-field-opt">(₱)</span></label>
+                                <input type="number" step="0.01" min="0" name="opening_balance" class="rm-input" x-model="cashOpeningForm.opening_balance" required>
+                            </div>
+                            <div class="rm-field">
+                                <label class="rm-field-label">At the start of</label>
+                                <input type="date" name="opening_date" class="rm-input" max="{{ now()->toDateString() }}" x-model="cashOpeningForm.opening_date" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="rm-drawer-foot">
+                        <div></div>
+                        <div class="rm-drawer-foot-right">
+                            <button type="button" class="rm-btn rm-btn--ghost" @click="closeCashOpening()">Cancel</button>
+                            <button type="submit" class="rm-btn rm-btn--primary" :disabled="cashOpeningSaving">Save</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </template>
     </div>
 
     <script>
@@ -431,6 +536,29 @@
                 countedCash: 0,
                 notes: '',
                 csrfToken: config.csrfToken,
+                cashOpeningOpen: false,
+                cashOpeningSaving: false,
+                cashOpeningForm: {
+                    branch_id: config.cashOpeningBranchId,
+                    opening_balance: '0.00',
+                    opening_date: '',
+                },
+                /* Load the figures belonging to the branch being edited, never a leftover
+                   from another one. */
+                syncCashOpeningForm(branchId) {
+                    const defaults = config.cashOpeningDefaults[String(branchId)];
+                    if (!defaults) return;
+                    this.cashOpeningForm.opening_balance = defaults.opening_balance;
+                    this.cashOpeningForm.opening_date = defaults.opening_date;
+                },
+                openCashOpening() {
+                    this.cashOpeningForm.branch_id = config.cashOpeningBranchId;
+                    this.syncCashOpeningForm(config.cashOpeningBranchId);
+                    this.cashOpeningOpen = true;
+                },
+                closeCashOpening() {
+                    this.cashOpeningOpen = false;
+                },
                 get updateUrl() {
                     return config.updateUrlTemplate.replace('__ID__', this.editingId);
                 },

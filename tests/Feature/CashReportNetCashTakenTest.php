@@ -142,8 +142,14 @@ class CashReportNetCashTakenTest extends TestCase
             ->get(route('day-closures.index', ['date_from' => '2026-09-01', 'date_to' => '2026-09-30']))
             ->assertOk()->getContent();
 
-        $this->assertStringNotContainsString('Cash on Hand', $html,
+        // Only the range tiles. "Cash on Hand" is now the running-balance card above
+        // them, which counts from an opening balance and so really is a balance.
+        $start = strpos($html, 'rh-pay-stats rh-cash-stats');
+        $this->assertNotFalse($start, 'the range tiles are on the page');
+        $tiles = substr($html, $start, strpos($html, 'rh-pay-toolbar', $start) - $start);
+
+        $this->assertStringNotContainsString('Cash on Hand', $tiles,
             'the label must stop describing a range total as a balance held');
-        $this->assertStringContainsString('Net Cash Taken', $html);
+        $this->assertStringContainsString('Net Cash Taken', $tiles);
     }
 }
