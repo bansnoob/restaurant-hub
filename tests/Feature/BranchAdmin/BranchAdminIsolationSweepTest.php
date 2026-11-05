@@ -4,6 +4,7 @@ namespace Tests\Feature\BranchAdmin;
 
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
+use App\Models\CashOpeningBalance;
 use App\Models\DayClosure;
 use App\Models\Employee;
 use App\Models\Expense;
@@ -176,7 +177,7 @@ class BranchAdminIsolationSweepTest extends TestCase
         $other = $this->other->id;
         $rows = [];
         foreach (['employees', 'attendance_records', 'sales', 'expenses', 'day_closures', 'payroll_periods', 'payroll_rules',
-            'menu_categories', 'menu_items', 'ingredients', 'ingredient_categories', 'stock_counts', 'gcash_adjustments', 'gcash_wallets',
+            'menu_categories', 'menu_items', 'ingredients', 'ingredient_categories', 'stock_counts', 'gcash_adjustments', 'gcash_wallets', 'cash_opening_balances',
             'inventory_movements'] as $table) {
             $rows[$table] = DB::table($table)->where('branch_id', $other)->orderBy('id')->get()->toArray();
         }
@@ -226,6 +227,7 @@ class BranchAdminIsolationSweepTest extends TestCase
             $ingredient = Ingredient::factory()->create(['branch_id' => $branch->id, 'ingredient_category_id' => $ingCat->id, 'name' => $mark.' rice', 'current_stock' => 1, 'reorder_level' => 10]);
             $count = StockCount::factory()->create(['branch_id' => $branch->id, 'recorded_by_user_id' => $owner->id, 'notes' => $mark.' count']);
             GcashWallet::factory()->create(['branch_id' => $branch->id, 'opening_balance' => 0, 'opening_date' => now()->startOfMonth()->toDateString()]);
+            CashOpeningBalance::factory()->create(['branch_id' => $branch->id, 'opening_balance' => 0, 'opening_date' => now()->startOfMonth()->toDateString()]);
             $adjustment = GcashAdjustment::factory()->create(['branch_id' => $branch->id, 'reason' => $mark.' adjustment']);
             $expenseCategory = ExpenseCategory::create(['branch_id' => $branch->id, 'name' => $mark.' Category', 'slug' => strtolower($mark).'-category', 'is_active' => true]);
 
