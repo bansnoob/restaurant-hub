@@ -171,4 +171,41 @@ class ExpensePaidFromTest extends TestCase
         $this->artisan('closures:recalculate --apply --date='.$this->date)->assertSuccessful();
         $this->assertSame(1700.0, round((float) $closure->fresh()->expected_cash, 2));
     }
+
+    /**
+     * The owner's call (2026-11-06): a receipt entered after the day was counted is
+     * assumed to be a forgotten one paid from that day's drawer. On 2026-11-02 two
+     * salaries entered three days late explained a P2,484 short exactly; treating them
+     * as cash on hand would have charged them twice.
+     */
+    public function test_a_late_expense_on_a_closed_day_defaults_to_that_days_drawer(): void
+    {
+        $closure = $this->closure();
+
+        $this->actingAs($this->owner)
+            ->post(route('expenses.store'), $this->payload(['paid_from' => null, 'amount' => 150]));
+
+        $this->assertSame('drawer', Expense::firstOrFail()->paid_from);
+        $this->assertSame(150.0, round((float) $closure->fresh()->cash_expenses_total, 2));
+    }
+
+    /**
+     * Once a day is counted its cash is part of Cash on Hand, so the closed-day choice is
+     * asked in those terms: before the count, or after it.
+     */
+    public function test_the_expense_form_names_both_closed_day_choices(): void
+    {
+        $this->actingAs($this->owner)->get(route('expenses.index'))
+            ->assertOk()
+            ->assertSee('That day’s drawer — paid before the cash was counted', false)
+            ->assertSee('Cash on hand — paid after the count', false);
+    }
+
+    public function test_edit_day_names_both_choices_the_same_way(): void
+    {
+        $this->actingAs($this->owner)->get(route('day-closures.index'))
+            ->assertOk()
+            ->assertSee('<option value="drawer">Day’s drawer</option>', false)
+            ->assertSee('<option value="outside">Cash on hand</option>', false);
+    }
 }

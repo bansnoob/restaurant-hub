@@ -419,12 +419,14 @@
                                                 </template>
                                             </select>
                                             {{-- Only drawer-paid rows count against this day's
-                                                 expected cash; outside-paid left the safe. --}}
+                                                 expected cash. A closed day's cash is part of Cash
+                                                 on Hand once counted, so anything paid after the
+                                                 count came from there. --}}
                                             <select class="rm-input rh-cash-edit-paid-from" aria-label="Paid from"
                                                     :name="'expenses[' + i + '][paid_from]'"
                                                     x-model="row.paid_from">
-                                                <option value="drawer">Drawer</option>
-                                                <option value="outside">Outside</option>
+                                                <option value="drawer">Day’s drawer</option>
+                                                <option value="outside">Cash on hand</option>
                                             </select>
                                             <input type="hidden" :name="'expenses[' + i + '][id]'" :value="row.id || ''">
                                         </div>

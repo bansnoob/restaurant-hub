@@ -415,12 +415,19 @@
                         {{-- Only cash has a drawer to come out of. Charging an outside-paid
                              expense to a day's closure reports a shortage the cashier never
                              caused — a P17,200 advance against a till that counted P2,000. --}}
+                        {{-- On a closed day the question is when, not where: once a day is
+                             counted its cash is part of Cash on Hand. Drawer stays the default
+                             (owner's call) — a late receipt is usually a forgotten one, and
+                             on 2026-11-02 two late salaries explained that day's short exactly. --}}
                         <div class="rm-field" x-show="form.payment_method === 'cash'">
                             <label class="rm-field-label">Paid From</label>
                             <select name="paid_from" class="rm-input" x-model="form.paid_from">
-                                <option value="drawer">Drawer — taken from the till</option>
-                                <option value="outside">Outside cash — safe, advance, owner</option>
+                                <option value="drawer" x-text="closedDay.closed ? 'That day’s drawer — paid before the cash was counted' : 'Drawer — taken from the till'">Drawer — taken from the till</option>
+                                <option value="outside" x-text="closedDay.closed ? 'Cash on hand — paid after the count' : 'Outside cash — safe, advance, owner'">Outside cash — safe, advance, owner</option>
                             </select>
+                            <p class="rm-field-hint" x-show="closedDay.closed && form.paid_from === 'drawer'" x-cloak>
+                                Paid after the cash was counted? Choose Cash on hand, or that day will show as over.
+                            </p>
                             <p class="rm-field-hint" x-show="form.paid_from === 'outside'">
                                 Reduces cash on hand, but not this day's expected drawer.
                             </p>
