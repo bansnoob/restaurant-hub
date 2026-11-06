@@ -31,6 +31,14 @@ class DayClosureController extends Controller
 {
     use ReadsQueryFilters;
 
+    /**
+     * Where a branch's Cash Report opens when no dates are asked for, instead of the last
+     * 30 days. Ramen Naijiro started counting its Cash on Hand on 2026-11-01 (the owner's
+     * call). Keyed by code, which is unique and prefixes every order number: "sm001" is
+     * Ramen Naijiro despite the name.
+     */
+    private const REPORT_START_BY_BRANCH_CODE = ['sm001' => '2026-11-01'];
+
     public function preview(Request $request): JsonResponse
     {
         $branchId = (int) ($this->queryValue($request, 'branch_id') ?: $this->resolveDefaultBranchId($request));
@@ -182,9 +190,13 @@ class DayClosureController extends Controller
     public function index(Request $request, CashReportService $cashReport, CashOnHandService $cashOnHand, SpecialExpenseOptions $options): View
     {
         $branchFilter = $this->queryValue($request, 'branch_id');
-        $dateFrom = $this->queryDate($request, 'date_from', now()->subDays(29)->toDateString());
-        $dateTo = $this->queryDate($request, 'date_to', now()->toDateString());
         $branchId = (! empty($branchFilter) && is_numeric($branchFilter)) ? (int) $branchFilter : null;
+        $defaults = [
+            'date_from' => $this->defaultDateFrom($branchId),
+            'date_to' => now()->toDateString(),
+        ];
+        $dateFrom = $this->queryDate($request, 'date_from', $defaults['date_from']);
+        $dateTo = $this->queryDate($request, 'date_to', $defaults['date_to']);
 
         $branches = Branch::visibleTo($request->user())->where('is_active', true)->orderBy('name')->get();
 
@@ -220,11 +232,23 @@ class DayClosureController extends Controller
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
             ],
+            'defaults' => $defaults,
             'special' => $special,
             'cashBalance' => $cashOnHand->summary($branchId),
             'cashOpeningDefaults' => $this->cashOpeningDefaults($branches),
             'cashOpeningBranchId' => (string) ($branchId ?? $request->user()?->resolveBranchId() ?? $branches->first()?->id ?? ''),
         ], $special['form'] ?? []));
+    }
+
+    /**
+     * The last 30 days, unless the branch in view has a start of its own. The all-branches
+     * view always gets the 30 days: no one branch's start applies to the others.
+     */
+    private function defaultDateFrom(?int $branchId): string
+    {
+        $code = $branchId !== null ? Branch::whereKey($branchId)->value('code') : null;
+
+        return self::REPORT_START_BY_BRANCH_CODE[$code] ?? now()->subDays(29)->toDateString();
     }
 
     /**
