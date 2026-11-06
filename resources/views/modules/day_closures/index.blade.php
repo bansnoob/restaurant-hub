@@ -6,7 +6,8 @@
     @php
         // Super admin or branch admin: the edit/manage controls.
         $isOwner = (bool) auth()->user()?->canManage();
-        $hasFilters = ! empty($filters['branch_id']);
+        // A branch admin's branch is forced, not chosen, so it is not a filter to reset.
+        $hasFilters = ! empty($filters['branch_id']) && ! $lockedBranch;
         $rangeLabel = \Carbon\Carbon::parse($filters['date_from'])->format('M j').' – '.\Carbon\Carbon::parse($filters['date_to'])->format('M j, Y');
     @endphp
 
@@ -157,7 +158,7 @@
                 <input type="date" name="date_from" value="{{ $filters['date_from'] }}" class="rh-att2-date" onchange="this.form.submit()">
                 <span class="rh-att2-summary-picker-label">To</span>
                 <input type="date" name="date_to" value="{{ $filters['date_to'] }}" class="rh-att2-date" onchange="this.form.submit()">
-                @if ($hasFilters || $filters['date_from'] !== now()->subDays(29)->toDateString() || $filters['date_to'] !== now()->toDateString())
+                @if ($hasFilters || $filters['date_from'] !== $defaults['date_from'] || $filters['date_to'] !== $defaults['date_to'])
                     <a href="{{ route('day-closures.index') }}" class="rh-emp-clear">Reset</a>
                 @endif
             </div>
