@@ -21,7 +21,21 @@
         ];
     @endphp
 
-    <div class="rh-pay-page" x-data="{ rulesOpen: false }">
+    <div
+        class="rh-pay-page"
+        x-data="{ rulesOpen: false, deductionOpen: @js($errors->hasAny(['amount', 'reason'])) }"
+        @keydown.escape.window="deductionOpen = false"
+    >
+        @if (session('success'))
+            <div class="rm-toast rm-toast--ok" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 2800)"><span>{{ session('success') }}</span></div>
+        @endif
+        @if (session('error'))
+            <div class="rm-toast rm-toast--err" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 4000)"><span>{{ session('error') }}</span></div>
+        @endif
+        @if ($errors->any())
+            <div class="rm-toast rm-toast--err" x-data="{ shown: true }" x-show="shown" x-init="setTimeout(() => shown = false, 5000)"><span>{{ $errors->first() }}</span></div>
+        @endif
+
         {{-- Period header --}}
         <div class="rh-pay-detail-header">
             <div class="rh-pay-detail-header-top">
@@ -105,6 +119,100 @@
                     </div>
                 </div>
             </div>
+
+            {{-- Deductions: late arrivals from attendance, then each one taken off by hand.
+                 Regenerating the report rebuilds the first line and keeps the rest. --}}
+            @php
+                $isDraft = $selectedEntry->status === 'draft';
+                $netLeft = (float) $selectedEntry->net_pay;
+                $manualTotal = (float) $manualDeductions->sum('amount');
+                $lateTotal = max(0, round((float) $selectedEntry->deductions - $manualTotal, 2));
+                $lateDays = (int) ($summary['late_days'] ?? 0);
+                $uncovered = $selectedEntry->uncoveredManualDeductions($manualTotal);
+                $canDeduct = $isDraft && $netLeft > 0;
+            @endphp
+            <div class="rh-pay-deduct">
+                <div class="rh-pay-deduct-head">
+                    <h3 class="rh-pay-daily-title">Deductions</h3>
+                    @if ($canDeduct)
+                        <button type="button" class="rm-btn rm-btn--ghost" @click="deductionOpen = true">
+                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/></svg>
+                            Add deduction
+                        </button>
+                    @endif
+                </div>
+                <ul class="rh-pay-deduct-list">
+                    <li class="rh-pay-deduct-row">
+                        <div>
+                            <p class="rh-pay-deduct-reason">Late arrivals</p>
+                            <p class="rh-pay-deduct-meta">From attendance · {{ $lateDays }} late {{ \Illuminate\Support\Str::plural('day', $lateDays) }}</p>
+                        </div>
+                        <span class="rh-pay-deduct-amount {{ $lateTotal > 0 ? '' : 'rh-pay-deduct-amount--none' }}">₱{{ number_format($lateTotal, 2) }}</span>
+                        <span></span>
+                    </li>
+                    @foreach ($manualDeductions as $deduction)
+                        <li class="rh-pay-deduct-row">
+                            <div>
+                                <p class="rh-pay-deduct-reason">{{ $deduction->reason }}</p>
+                                <p class="rh-pay-deduct-meta">Added by {{ $deduction->recordedBy?->name ?? 'a removed user' }} · {{ $deduction->created_at?->format('M j, g:i A') }}</p>
+                            </div>
+                            <span class="rh-pay-deduct-amount">₱{{ number_format((float) $deduction->amount, 2) }}</span>
+                            @if ($isDraft)
+                                <form method="POST" action="{{ route('payroll.deductions.destroy', $deduction) }}" onsubmit="return confirm('Remove this ₱{{ number_format((float) $deduction->amount, 2) }} deduction? The net pay goes back up by the same amount.');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="rh-pay-deduct-remove" aria-label="Remove deduction" title="Remove deduction">
+                                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                                    </button>
+                                </form>
+                            @else
+                                <span></span>
+                            @endif
+                        </li>
+                    @endforeach
+                </ul>
+                <div class="rh-pay-deduct-total">
+                    <span>Total</span>
+                    <span class="rh-pay-deduct-total-value">₱{{ number_format((float) $selectedEntry->deductions, 2) }}</span>
+                    <span></span>
+                </div>
+                @if ($uncovered > 0)
+                    <p class="rh-pay-deduct-warn">₱{{ number_format($uncovered, 2) }} of these deductions is more than the pay. Net pay stops at ₱0, so that much is not being taken.{{ $isDraft ? ' Reduce a deduction before finalizing and carry the rest to the next payroll.' : '' }}</p>
+                @endif
+            </div>
+
+            @if ($canDeduct)
+                <template x-if="deductionOpen">
+                    <div class="rm-overlay" @click.self="deductionOpen = false">
+                        <form method="POST" action="{{ route('payroll.deductions.store', $selectedEntry) }}" class="rm-drawer" x-data="{ amount: @js(old('amount', '')), submitting: false }" @submit="submitting = true">
+                            @csrf
+                            <div class="rm-drawer-head">
+                                <h2 class="rm-drawer-title">Add Deduction</h2>
+                                <button type="button" class="rm-drawer-close" @click="deductionOpen = false">×</button>
+                            </div>
+                            <div class="rm-drawer-body">
+                                <p class="rm-field-hint">{{ $selectedEmployee->first_name }} {{ $selectedEmployee->last_name }} · {{ $startLabel }} – {{ $endLabel }} · Net pay ₱{{ number_format($netLeft, 2) }}</p>
+                                <div class="rm-field">
+                                    <label class="rm-field-label" for="deduction_amount">Amount (₱)</label>
+                                    <input id="deduction_amount" type="number" name="amount" class="rm-input" x-model="amount" step="0.01" min="0.01" max="{{ number_format($netLeft, 2, '.', '') }}" inputmode="decimal" required>
+                                </div>
+                                <div class="rm-field">
+                                    <label class="rm-field-label" for="deduction_reason">Reason</label>
+                                    <input id="deduction_reason" type="text" name="reason" class="rm-input" value="{{ is_string(old('reason')) ? old('reason') : '' }}" maxlength="200" placeholder="Cash advance, broken plate, uniform…" required>
+                                </div>
+                                <p class="rm-field-hint" x-show="Number(amount) > 0" x-text="'Net pay after: ₱' + Math.max(0, {{ number_format($netLeft, 2, '.', '') }} - Number(amount)).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })"></p>
+                            </div>
+                            <div class="rm-drawer-foot">
+                                <div></div>
+                                <div class="rm-drawer-foot-right">
+                                    <button type="button" class="rm-btn rm-btn--ghost" @click="deductionOpen = false">Cancel</button>
+                                    <button type="submit" class="rm-btn rm-btn--primary" :disabled="submitting">Add deduction</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </template>
+            @endif
 
             {{-- Applied rules (collapsible) --}}
             <div class="rh-pay-rules-block">

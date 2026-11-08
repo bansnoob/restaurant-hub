@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Models\Branch;
+use App\Models\PayrollDeduction;
 use App\Models\PayrollEntry;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
@@ -75,6 +76,10 @@ class LockToOwnBranch
     {
         if ($model instanceof PayrollEntry) {
             return (int) $model->payrollPeriod?->branch_id === $branchId;
+        }
+
+        if ($model instanceof PayrollDeduction) {
+            return (int) $model->payrollEntry?->payrollPeriod?->branch_id === $branchId;
         }
 
         if (! array_key_exists('branch_id', $model->getAttributes())) {

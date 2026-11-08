@@ -314,12 +314,14 @@ class AttendanceController extends Controller
         $branchId = (int) $attendanceRecord->branch_id;
 
         DB::transaction(function () use ($attendanceRecord, $employee, $workDate, $branchId): void {
-            $attendanceRecord->delete();
+            // By key: on a deadlock retry the bound model already counts itself deleted,
+            // and $attendanceRecord->delete() would skip the row the rollback restored.
+            AttendanceRecord::whereKey($attendanceRecord->id)->delete();
 
             if ($employee) {
                 $this->syncDraftPayrollEntriesForEmployeeDate($employee, $workDate, $branchId);
             }
-        });
+        }, PayrollEntry::WRITE_ATTEMPTS);
 
         return back()->with('success', 'Daily attendance record deleted and related draft payroll reports updated.');
     }
@@ -367,56 +369,79 @@ class AttendanceController extends Controller
         $calculator = app(AttendanceSummaryCalculator::class);
 
         foreach ($periods as $period) {
-            $existingEntry = PayrollEntry::where('payroll_period_id', $period->id)
-                ->where('employee_id', $employee->id)
-                ->first();
-
-            // Refresh a report the owner generated; never bring one into being.
-            //
-            // Overlapping periods are legal — the unique key is
-            // (branch_id, start_date, end_date), so a weekly period nests inside a
-            // semi-monthly one and both match this date. updateOrCreate therefore
-            // INSERTED a payable row into every period the employee had no entry in,
-            // covering days they had already been paid for, with nothing in the UI to
-            // distinguish it from a report someone asked for.
-            if (! $existingEntry || $existingEntry->status === 'paid') {
-                continue;
-            }
-
-            $records = AttendanceRecord::where('employee_id', $employee->id)
-                ->where('branch_id', $branchId)
-                ->whereDate('work_date', '>=', $period->start_date)
-                ->whereDate('work_date', '<=', $period->end_date)
-                ->get();
-
-            $summary = $calculator->summarizeForEmployee(
-                $employee,
-                $records,
-                (string) $period->start_date,
-                (string) $period->end_date,
-                $ruleValues
+            DB::transaction(
+                fn () => $this->refreshDraftEntry($employee, $period, $branchId, $workDate, $ruleValues, $calculator),
+                PayrollEntry::WRITE_ATTEMPTS
             );
-
-            $regularHours = (float) $summary['regular_hours'];
-            $overtimeHours = (float) $summary['payable_overtime_hours'];
-            $hourlyRate = (float) ($summary['hourly_rate'] ?? 0);
-            $dailyRate = (float) ($summary['daily_rate'] ?? 0);
-            $grossPay = (float) $summary['estimated_gross_pay'];
-            $deductions = (float) $summary['estimated_deductions'];
-            $netPay = max(0, $grossPay - $deductions);
-
-            $existingEntry->update([
-                'regular_hours' => round($regularHours, 2),
-                'overtime_hours' => round($overtimeHours, 2),
-                'hourly_rate' => $hourlyRate,
-                'daily_rate' => round($dailyRate, 2),
-                'gross_pay' => round($grossPay, 2),
-                'deductions' => $deductions,
-                'net_pay' => round($netPay, 2),
-                'status' => 'draft',
-                'notes' => 'Auto-updated from attendance on '.$workDate.'.',
-            ]);
         }
+    }
+
+    /**
+     * Locked, like Generate: an add or remove of a manual deduction on this report
+     * waits for the refresh, or the refresh waits for it, so neither is lost.
+     */
+    private function refreshDraftEntry(
+        Employee $employee,
+        PayrollPeriod $period,
+        int $branchId,
+        string $workDate,
+        array $ruleValues,
+        AttendanceSummaryCalculator $calculator,
+    ): void {
+        $existingEntry = PayrollEntry::where('payroll_period_id', $period->id)
+            ->where('employee_id', $employee->id)
+            ->lockForUpdate()
+            ->first();
+
+        // Refresh a report the owner generated; never bring one into being.
+        //
+        // Overlapping periods are legal — the unique key is
+        // (branch_id, start_date, end_date), so a weekly period nests inside a
+        // semi-monthly one and both match this date. updateOrCreate therefore
+        // INSERTED a payable row into every period the employee had no entry in,
+        // covering days they had already been paid for, with nothing in the UI to
+        // distinguish it from a report someone asked for.
+        if (! $existingEntry || $existingEntry->status === 'paid') {
+            return;
+        }
+
+        $records = AttendanceRecord::where('employee_id', $employee->id)
+            ->where('branch_id', $branchId)
+            ->whereDate('work_date', '>=', $period->start_date)
+            ->whereDate('work_date', '<=', $period->end_date)
+            ->get();
+
+        $summary = $calculator->summarizeForEmployee(
+            $employee,
+            $records,
+            (string) $period->start_date,
+            (string) $period->end_date,
+            $ruleValues
+        );
+
+        $regularHours = (float) $summary['regular_hours'];
+        $overtimeHours = (float) $summary['payable_overtime_hours'];
+        $hourlyRate = (float) ($summary['hourly_rate'] ?? 0);
+        $dailyRate = (float) ($summary['daily_rate'] ?? 0);
+        $grossPay = (float) $summary['estimated_gross_pay'];
+        // Manual deductions (a cash advance) are not attendance and must survive this.
+        $pay = PayrollEntry::payAfterDeductions(
+            $grossPay,
+            (float) $summary['estimated_deductions'],
+            $existingEntry->manualDeductionTotal()
+        );
+
+        $existingEntry->update([
+            'regular_hours' => round($regularHours, 2),
+            'overtime_hours' => round($overtimeHours, 2),
+            'hourly_rate' => $hourlyRate,
+            'daily_rate' => round($dailyRate, 2),
+            'gross_pay' => round($grossPay, 2),
+            'deductions' => $pay['deductions'],
+            'net_pay' => $pay['net_pay'],
+            'status' => 'draft',
+            'notes' => 'Auto-updated from attendance on '.$workDate.'.',
+        ]);
     }
 
     /** The super admin reaches every branch; anyone else only their own. */

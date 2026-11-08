@@ -238,7 +238,13 @@
                                         Finalize
                                     </button>
                                     <hr>
-                                    <form method="POST" action="{{ route('payroll.reports.destroy', $report) }}" onsubmit="return confirm('Delete this payroll report? This cannot be undone.');">
+                                    @php
+                                        $manualOnReport = (float) ($report->manual_deductions_sum_amount ?? 0);
+                                        $deleteWarning = 'Delete this payroll report?'
+                                            .($manualOnReport > 0 ? ' Its manual deductions (₱'.number_format($manualOnReport, 2).') are deleted with it.' : '')
+                                            .' This cannot be undone.';
+                                    @endphp
+                                    <form method="POST" action="{{ route('payroll.reports.destroy', $report) }}" onsubmit="return confirm('{{ $deleteWarning }}');">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="is-danger">
