@@ -15,6 +15,7 @@ use App\Models\Ingredient;
 use App\Models\IngredientCategory;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
+use App\Models\PayrollDeduction;
 use App\Models\PayrollEntry;
 use App\Models\PayrollPeriod;
 use App\Models\Sale;
@@ -141,7 +142,7 @@ class BranchAdminIsolationSweepTest extends TestCase
                 'deleted_expense_ids' => [$this->otherIds['expense']],
                 'auto_clockout_attendance_ids' => [$this->otherIds['attendanceRecord']],
                 'categories' => [['id' => $this->otherIds['ingredientCategory'], 'sort_order' => 1]],
-                'name' => 'Hijack', 'first_name' => 'Hi', 'last_name' => 'Jack', 'description' => 'hijack', 'code' => 'hijack1', 'sku' => 'HIJACK',
+                'name' => 'Hijack', 'first_name' => 'Hi', 'last_name' => 'Jack', 'description' => 'hijack', 'reason' => 'hijack', 'code' => 'hijack1', 'sku' => 'HIJACK',
                 'amount' => 1, 'base_price' => 1, 'daily_rate' => 1, 'quantity' => 1, 'current_stock' => 1, 'reorder_level' => 1, 'unit' => 'pcs',
                 'payment_method' => 'cash', 'paid_from' => 'drawer', 'status' => 'accepted', 'is_active' => 1, 'sort_order' => 1,
                 'date' => $today, 'work_date' => $today, 'expense_date' => $today, 'closed_at_date' => $today, 'hire_date' => $today,
@@ -183,6 +184,7 @@ class BranchAdminIsolationSweepTest extends TestCase
         }
         $rows['special_expenses'] = DB::table('special_expenses')->where(fn ($q) => $q->where('branch_id', $other)->orWhereNull('branch_id'))->orderBy('id')->get()->toArray();
         $rows['payroll_entries'] = DB::table('payroll_entries')->whereIn('payroll_period_id', DB::table('payroll_periods')->where('branch_id', $other)->pluck('id'))->orderBy('id')->get()->toArray();
+        $rows['payroll_deductions'] = DB::table('payroll_deductions')->whereIn('payroll_entry_id', array_column($rows['payroll_entries'], 'id'))->orderBy('id')->get()->toArray();
         $rows['sale_items'] = DB::table('sale_items')->whereIn('sale_id', DB::table('sales')->where('branch_id', $other)->pluck('id'))->orderBy('id')->get()->toArray();
         $rows['gcash_entry_statuses'] = DB::table('gcash_entry_statuses')->orderBy('id')->get()->toArray();
         $rows['branch'] = DB::table('branches')->where('id', $other)->get()->toArray();
@@ -222,7 +224,8 @@ class BranchAdminIsolationSweepTest extends TestCase
                 'expected_cash' => 0, 'counted_cash' => 0, 'variance' => 0, 'order_count' => 0, 'expense_count' => 0, 'notes' => $mark.' closing note',
             ]);
             $period = PayrollPeriod::create(['branch_id' => $branch->id, 'start_date' => now()->subDays(6)->toDateString(), 'end_date' => now()->toDateString(), 'cutoff_label' => $mark.' week', 'status' => 'draft']);
-            $entry = PayrollEntry::create(['payroll_period_id' => $period->id, 'employee_id' => $employee->id, 'gross_pay' => 777, 'net_pay' => 777, 'status' => 'draft', 'notes' => $mark.' pay']);
+            $entry = PayrollEntry::create(['payroll_period_id' => $period->id, 'employee_id' => $employee->id, 'gross_pay' => 777, 'deductions' => 7, 'net_pay' => 770, 'status' => 'draft', 'notes' => $mark.' pay']);
+            $deduction = PayrollDeduction::factory()->create(['payroll_entry_id' => $entry->id, 'amount' => 7, 'reason' => $mark.' advance']);
             $ingCat = IngredientCategory::where('branch_id', $branch->id)->orderBy('sort_order')->firstOrFail();
             $ingredient = Ingredient::factory()->create(['branch_id' => $branch->id, 'ingredient_category_id' => $ingCat->id, 'name' => $mark.' rice', 'current_stock' => 1, 'reorder_level' => 10]);
             $count = StockCount::factory()->create(['branch_id' => $branch->id, 'recorded_by_user_id' => $owner->id, 'notes' => $mark.' count']);
@@ -236,7 +239,7 @@ class BranchAdminIsolationSweepTest extends TestCase
                     'branch' => $branch->id, 'employee' => $employee->id, 'attendanceRecord' => $record->id,
                     'category' => $menuCat->id, 'item' => $item->id, 'sale' => $sale->id, 'dayClosure' => $closure->id,
                     'expense' => $expense->id, 'gcashExpense' => $gcashExpense->id, 'specialExpense' => $special->id,
-                    'payrollPeriod' => $period->id, 'payrollEntry' => $entry->id, 'ingredient' => $ingredient->id,
+                    'payrollPeriod' => $period->id, 'payrollEntry' => $entry->id, 'payrollDeduction' => $deduction->id, 'ingredient' => $ingredient->id,
                     'ingredientCategory' => $ingCat->id, 'stockCount' => $count->id, 'gcashAdjustment' => $adjustment->id,
                     'expenseCategory' => $expenseCategory->id, 'user' => $owner->id,
                 ];

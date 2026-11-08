@@ -8,6 +8,7 @@ use App\Http\Controllers\Concerns\ReadsQueryFilters;
 use App\Models\AttendanceRecord;
 use App\Models\Branch;
 use App\Models\Employee;
+use App\Models\PayrollDeduction;
 use App\Models\PayrollEntry;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollRule;
@@ -53,6 +54,8 @@ class PayrollController extends Controller
             ->whereHas('payrollPeriod')
             ->join('payroll_periods', 'payroll_entries.payroll_period_id', '=', 'payroll_periods.id')
             ->select('payroll_entries.*')
+            // After select(), which would otherwise drop the column it adds.
+            ->withSum('manualDeductions', 'amount')
             ->orderByDesc('payroll_periods.end_date')
             ->orderByDesc('payroll_periods.start_date')
             ->orderByDesc('payroll_entries.id');
@@ -153,6 +156,10 @@ class PayrollController extends Controller
             );
         }
 
+        $manualDeductions = $selectedEntry
+            ? $selectedEntry->manualDeductions()->with('recordedBy')->orderBy('id')->get()
+            : collect();
+
         $totalNet = (float) $entries->sum('net_pay');
         $totalGross = (float) $entries->sum('gross_pay');
         $totalDeductions = (float) $entries->sum('deductions');
@@ -164,6 +171,7 @@ class PayrollController extends Controller
             'selectedEmployee' => $selectedEmployee,
             'summary' => $summary,
             'dailyBreakdown' => $dailyBreakdown,
+            'manualDeductions' => $manualDeductions,
             'rule' => $rule,
             'totals' => [
                 'net' => $totalNet,
@@ -190,7 +198,7 @@ class PayrollController extends Controller
 
         DB::transaction(function () use ($validated, $employee, $calculator): void {
             $this->generateForEmployee($employee, $validated['start_date'], $validated['end_date'], $calculator);
-        });
+        }, PayrollEntry::WRITE_ATTEMPTS);
 
         return back()->with('success', 'Payroll period generated successfully.');
     }
@@ -230,7 +238,7 @@ class PayrollController extends Controller
             try {
                 DB::transaction(function () use ($employee, $validated, $calculator): void {
                     $this->generateForEmployee($employee, $validated['start_date'], $validated['end_date'], $calculator);
-                });
+                }, PayrollEntry::WRITE_ATTEMPTS);
                 $generated++;
             } catch (ValidationException $e) {
                 $reason = collect($e->errors())->flatten()->first() ?? 'could not be generated';
@@ -308,18 +316,28 @@ class PayrollController extends Controller
             'paid_date' => ['nullable', 'date', 'before_or_equal:today'],
         ]);
 
-        $entry = PayrollEntry::with(['payrollPeriod', 'employee', 'specialExpense'])
-            ->findOrFail($validated['payroll_entry_id']);
+        $entry = PayrollEntry::with('payrollPeriod')->findOrFail($validated['payroll_entry_id']);
         $this->authorizeBranch($request, (int) $entry->payrollPeriod?->branch_id);
-
-        if ($entry->status === 'paid') {
-            return back()->with('error', 'Payroll report is already finalized.');
-        }
 
         // Marking the report paid and recording the money that paid it are one act.
         // Splitting them is what left wages sitting as open drafts while the cash was
         // written down by hand somewhere else, the same wage twice at two amounts.
-        DB::transaction(function () use ($entry, $validated): void {
+        return DB::transaction(function () use ($validated): RedirectResponse {
+            // Re-read under a lock: a deduction or an attendance refresh committed since
+            // the read above changes net_pay, and the wage posted must be this one.
+            $entry = PayrollEntry::with(['payrollPeriod', 'employee', 'specialExpense'])
+                ->lockForUpdate()
+                ->findOrFail($validated['payroll_entry_id']);
+
+            if ($entry->status === 'paid') {
+                return back()->with('error', 'Payroll report is already finalized.');
+            }
+
+            $uncovered = $entry->uncoveredManualDeductions();
+            if ($uncovered > 0) {
+                return back()->with('error', '₱'.number_format($uncovered, 2).' of the manual deductions is more than the pay, so it would never be taken. Reduce a deduction first and carry the rest to the next payroll.');
+            }
+
             $entry->update(['status' => 'paid']);
 
             $period = $entry->payrollPeriod;
@@ -332,9 +350,62 @@ class PayrollController extends Controller
                 $validated['payment_method'] ?? 'cash',
                 $validated['paid_date'] ?? Carbon::now()->toDateString()
             );
-        });
 
-        return back()->with('success', 'Payroll report finalized, locked and posted to overhead.');
+            return back()->with('success', 'Payroll report finalized, locked and posted to overhead.');
+        }, PayrollEntry::WRITE_ATTEMPTS);
+    }
+
+    /**
+     * Take an amount off a draft report by hand, with the reason it was taken.
+     * (The report is in the URL, so LockToOwnBranch has already checked its branch.)
+     */
+    public function storeDeduction(Request $request, PayrollEntry $payrollEntry): RedirectResponse
+    {
+        $validated = $request->validate([
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'min:0.01', 'max:99999999.99'],
+            'reason' => ['required', 'string', 'max:200'],
+        ]);
+
+        return DB::transaction(function () use ($request, $payrollEntry, $validated): RedirectResponse {
+            $entry = PayrollEntry::whereKey($payrollEntry->id)->lockForUpdate()->firstOrFail();
+            if ($entry->status !== 'draft') {
+                return back()->with('error', 'This payroll report is finalized. Its deductions can no longer change.');
+            }
+
+            $amount = round((float) $validated['amount'], 2);
+            if ($amount > (float) $entry->net_pay) {
+                throw ValidationException::withMessages([
+                    'amount' => 'A deduction can be at most the net pay left, ₱'.number_format((float) $entry->net_pay, 2).'.',
+                ]);
+            }
+
+            $attendanceDeductions = $entry->attendanceDeductionTotal();
+            $entry->manualDeductions()->create([
+                'amount' => $amount,
+                'reason' => $validated['reason'],
+                'recorded_by_user_id' => $request->user()->id,
+            ]);
+            $entry->retotal($attendanceDeductions);
+
+            return back()->with('success', 'Deduction of ₱'.number_format($amount, 2).' added.');
+        }, PayrollEntry::WRITE_ATTEMPTS);
+    }
+
+    public function destroyDeduction(PayrollDeduction $payrollDeduction): RedirectResponse
+    {
+        return DB::transaction(function () use ($payrollDeduction): RedirectResponse {
+            $entry = PayrollEntry::whereKey($payrollDeduction->payroll_entry_id)->lockForUpdate()->firstOrFail();
+            if ($entry->status !== 'draft') {
+                return back()->with('error', 'This payroll report is finalized. Its deductions can no longer change.');
+            }
+
+            $attendanceDeductions = $entry->attendanceDeductionTotal();
+            // By key: on a deadlock retry the bound model already counts itself deleted.
+            PayrollDeduction::whereKey($payrollDeduction->id)->delete();
+            $entry->retotal($attendanceDeductions);
+
+            return back()->with('success', 'Deduction removed.');
+        }, PayrollEntry::WRITE_ATTEMPTS);
     }
 
     /**
@@ -399,23 +470,24 @@ class PayrollController extends Controller
 
     public function destroyReport(PayrollEntry $payrollEntry): RedirectResponse
     {
-        $payrollEntry->load('payrollPeriod');
-        $period = $payrollEntry->payrollPeriod;
+        return DB::transaction(function () use ($payrollEntry): RedirectResponse {
+            // Re-read under a lock: a report finalized since the page loaded is paid now,
+            // and deleting it would also delete its deductions.
+            $entry = PayrollEntry::with('payrollPeriod')->lockForUpdate()->findOrFail($payrollEntry->id);
+            if ($entry->status !== 'draft') {
+                return back()->with('error', 'Only draft payroll reports can be deleted.');
+            }
 
-        if ($payrollEntry->status !== 'draft') {
-            return back()->with('error', 'Only draft payroll reports can be deleted.');
-        }
-
-        DB::transaction(function () use ($payrollEntry, $period): void {
-            $payrollEntry->delete();
+            $period = $entry->payrollPeriod;
+            $entry->delete();
 
             $remainingReports = PayrollEntry::where('payroll_period_id', $period->id)->exists();
             if (! $remainingReports) {
                 $period->delete();
             }
-        });
 
-        return back()->with('success', 'Payroll report deleted successfully.');
+            return back()->with('success', 'Payroll report deleted successfully.');
+        }, PayrollEntry::WRITE_ATTEMPTS);
     }
 
     private function guardEmployeeForGenerate(Employee $employee): void
@@ -450,11 +522,16 @@ class PayrollController extends Controller
             $recordsByBranch = collect([(int) $employee->branch_id => collect()]);
         }
 
+        $generated = [];
         foreach ($recordsByBranch as $branchId => $records) {
-            $this->generateEntryAtBranch($employee, (int) $branchId, $records, $startDate, $endDate, $calculator);
+            $generated[(int) $branchId] = $this->generateEntryAtBranch($employee, (int) $branchId, $records, $startDate, $endDate, $calculator);
         }
 
-        $this->removeStaleDrafts($employee, $recordsByBranch->keys()->map(fn ($id) => (int) $id)->all(), $startDate, $endDate);
+        // The days a stale draft paid now belong to another report, and so do the
+        // deductions taken off it: the current branch's report when there is one.
+        $replacement = $generated[(int) $employee->branch_id] ?? reset($generated);
+
+        $this->removeStaleDrafts($employee, array_keys($generated), $startDate, $endDate, $replacement);
     }
 
     /**
@@ -463,19 +540,30 @@ class PayrollController extends Controller
      * what a report generated before the split looks like. Paid reports are never
      * touched, and a period left with no reports is removed, as destroyReport does.
      *
+     * Its manual deductions move to $replacement first: a cash advance is still owed
+     * after the days are paid somewhere else.
+     *
      * @param  list<int>  $branchIds  the branches that do have days in the range
      */
-    private function removeStaleDrafts(Employee $employee, array $branchIds, string $startDate, string $endDate): void
+    private function removeStaleDrafts(Employee $employee, array $branchIds, string $startDate, string $endDate, PayrollEntry $replacement): void
     {
+        // Locked, so a report finalized meanwhile is no longer a draft by the time it is
+        // read, and a deduction being added to one waits instead of being deleted with it.
         $stale = PayrollEntry::where('employee_id', $employee->id)
             ->where('status', 'draft')
             ->whereHas('payrollPeriod', fn ($q) => $q
                 ->whereDate('start_date', $startDate)
                 ->whereDate('end_date', $endDate)
                 ->whereNotIn('branch_id', $branchIds))
+            ->lockForUpdate()
             ->get();
 
         foreach ($stale as $entry) {
+            $attendanceDeductions = $replacement->attendanceDeductionTotal();
+            if ($entry->manualDeductions()->update(['payroll_entry_id' => $replacement->id]) > 0) {
+                $replacement->retotal($attendanceDeductions);
+            }
+
             $periodId = $entry->payroll_period_id;
             $entry->delete();
 
@@ -492,7 +580,7 @@ class PayrollController extends Controller
         string $startDate,
         string $endDate,
         AttendanceSummaryCalculator $calculator,
-    ): void {
+    ): PayrollEntry {
         $branchName = Branch::find($branchId)?->name ?? 'Branch '.$branchId;
         $startLabel = Carbon::parse($startDate)->format('M j');
         $endLabel = Carbon::parse($endDate)->format('M j');
@@ -518,8 +606,11 @@ class PayrollController extends Controller
                 'processed_at' => now(),
             ]);
 
+        // Locked: an add or remove of a manual deduction waits for this rebuild, or it
+        // waits for them, so the totals written below always include every deduction.
         $existingEntry = PayrollEntry::where('payroll_period_id', $period->id)
             ->where('employee_id', $employee->id)
+            ->lockForUpdate()
             ->first();
         if ($existingEntry && $existingEntry->status === 'paid') {
             throw ValidationException::withMessages([
@@ -537,26 +628,29 @@ class PayrollController extends Controller
         $hourlyRate = (float) ($summary['hourly_rate'] ?? 0);
         $dailyRate = (float) ($summary['daily_rate'] ?? 0);
         $grossPay = (float) $summary['estimated_gross_pay'];
-        $deductions = (float) $summary['estimated_deductions'];
-        $netPay = max(0, $grossPay - $deductions);
-
-        PayrollEntry::updateOrCreate(
-            [
-                'payroll_period_id' => $period->id,
-                'employee_id' => $employee->id,
-            ],
-            [
-                'regular_hours' => round($regularHours, 2),
-                'overtime_hours' => round($overtimeHours, 2),
-                'hourly_rate' => $hourlyRate,
-                'daily_rate' => round($dailyRate, 2),
-                'gross_pay' => round($grossPay, 2),
-                'deductions' => $deductions,
-                'net_pay' => round($netPay, 2),
-                'status' => 'draft',
-                'notes' => 'Auto-generated from attendance summary. Late: '.$summary['late_hours'].'h, Absent days: '.$summary['absent_days'].', Present days: '.$summary['present_days'],
-            ]
+        $pay = PayrollEntry::payAfterDeductions(
+            $grossPay,
+            (float) $summary['estimated_deductions'],
+            $existingEntry?->manualDeductionTotal() ?? 0.0
         );
+
+        $values = [
+            'regular_hours' => round($regularHours, 2),
+            'overtime_hours' => round($overtimeHours, 2),
+            'hourly_rate' => $hourlyRate,
+            'daily_rate' => round($dailyRate, 2),
+            'gross_pay' => round($grossPay, 2),
+            'deductions' => $pay['deductions'],
+            'net_pay' => $pay['net_pay'],
+            'status' => 'draft',
+            'notes' => 'Auto-generated from attendance summary. Late: '.$summary['late_hours'].'h, Absent days: '.$summary['absent_days'].', Present days: '.$summary['present_days'],
+        ];
+
+        // Through the locked row, not updateOrCreate: that re-reads the entry without the
+        // lock and writes only what differs from its own (possibly older) copy.
+        return $existingEntry
+            ? tap($existingEntry)->update($values)
+            : PayrollEntry::create(['payroll_period_id' => $period->id, 'employee_id' => $employee->id] + $values);
     }
 
     private function resolveRules(int $branchId): PayrollRule

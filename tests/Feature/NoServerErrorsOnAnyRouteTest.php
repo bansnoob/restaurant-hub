@@ -14,6 +14,7 @@ use App\Models\Ingredient;
 use App\Models\IngredientCategory;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
+use App\Models\PayrollDeduction;
 use App\Models\PayrollEntry;
 use App\Models\PayrollPeriod;
 use App\Models\Sale;
@@ -310,7 +311,8 @@ class NoServerErrorsOnAnyRouteTest extends TestCase
             'expected_cash' => 0, 'counted_cash' => 0, 'variance' => 0, 'order_count' => 0, 'expense_count' => 0,
         ]);
         $period = PayrollPeriod::create(['branch_id' => $main->id, 'start_date' => now()->subDays(6)->toDateString(), 'end_date' => now()->toDateString(), 'cutoff_label' => 'probe', 'status' => 'draft']);
-        $entry = PayrollEntry::create(['payroll_period_id' => $period->id, 'employee_id' => $employee->id, 'gross_pay' => 500, 'net_pay' => 500, 'status' => 'draft']);
+        $entry = PayrollEntry::create(['payroll_period_id' => $period->id, 'employee_id' => $employee->id, 'gross_pay' => 500, 'deductions' => 50, 'net_pay' => 450, 'status' => 'draft']);
+        $deduction = PayrollDeduction::factory()->create(['payroll_entry_id' => $entry->id, 'amount' => 50]);
 
         $ingCat = IngredientCategory::where('branch_id', $main->id)->firstOrFail();
         $ingredient = Ingredient::factory()->create(['branch_id' => $main->id, 'ingredient_category_id' => $ingCat->id]);
@@ -322,7 +324,7 @@ class NoServerErrorsOnAnyRouteTest extends TestCase
             'branch' => $second->id, 'mainBranch' => $main->id, 'employee' => $employee->id, 'attendanceRecord' => $record->id,
             'category' => $menuCat->id, 'item' => $item->id, 'sale' => $sale->id, 'dayClosure' => $closure->id,
             'expense' => $expense->id, 'expenseCategory' => $expCat->id, 'specialExpense' => $special->id,
-            'payrollPeriod' => $period->id, 'payrollEntry' => $entry->id, 'ingredient' => $ingredient->id,
+            'payrollPeriod' => $period->id, 'payrollEntry' => $entry->id, 'payrollDeduction' => $deduction->id, 'ingredient' => $ingredient->id,
             'ingredientCategory' => $ingCat->id, 'stockCount' => $count->id, 'gcashAdjustment' => $adjustment->id,
             // Users page: another account, never the owner making the requests.
             'user' => $this->cashier->id,

@@ -6513,6 +6513,120 @@ select.rm-input {
     font-variant-numeric: lining-nums tabular-nums;
 }
 
+/* Deductions: late arrivals, then each deduction taken off by hand with its reason */
+.rh-pay-deduct {
+    background: var(--rh-surface);
+    border: 1px solid var(--rh-border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+}
+
+.rh-pay-deduct-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.8rem 1.5rem;
+    border-bottom: 1px solid var(--rh-border);
+}
+
+.rh-pay-deduct-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.rh-pay-deduct-row,
+.rh-pay-deduct-total {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 2rem;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1.5rem;
+}
+
+.rh-pay-deduct-row { border-bottom: 1px solid var(--rh-border); }
+
+.rh-pay-deduct-reason {
+    font-family: var(--rh-font-sans);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--rh-text);
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.rh-pay-deduct-meta {
+    font-family: var(--rh-font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
+    color: var(--rh-text-muted);
+    margin: 0.15rem 0 0;
+}
+
+.rh-pay-deduct-amount {
+    font-family: var(--rh-font-mono);
+    font-size: 0.85rem;
+    color: var(--rh-amber-text);
+    font-variant-numeric: lining-nums tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.rh-pay-deduct-amount--none { color: var(--rh-text-dim); }
+
+.rh-pay-deduct-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--rh-text-muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.rh-pay-deduct-remove:hover {
+    background: var(--rh-error-bg);
+    color: var(--rh-error-text);
+}
+
+.rh-pay-deduct-total {
+    background: var(--rh-surface-2);
+    font-family: var(--rh-font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--rh-text-muted);
+}
+
+.rh-pay-deduct-total-value {
+    font-family: var(--rh-font-serif);
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--rh-amber-text);
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: lining-nums tabular-nums;
+}
+
+.rh-pay-deduct-warn {
+    margin: 0;
+    padding: 0.75rem 1.5rem;
+    border-top: 1px solid var(--rh-border);
+    background: var(--rh-error-bg);
+    color: var(--rh-error-text);
+    font-family: var(--rh-font-sans);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
 /* Daily breakdown table */
 .rh-pay-daily {
     background: var(--rh-surface);

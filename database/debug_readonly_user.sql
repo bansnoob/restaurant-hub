@@ -31,6 +31,7 @@ GRANT SELECT ON restaurant_hub.menu_items TO 'claude_ro'@'localhost';
 GRANT SELECT ON restaurant_hub.migrations TO 'claude_ro'@'localhost';
 GRANT SELECT ON restaurant_hub.model_has_permissions TO 'claude_ro'@'localhost';
 GRANT SELECT ON restaurant_hub.model_has_roles TO 'claude_ro'@'localhost';
+GRANT SELECT ON restaurant_hub.payroll_deductions TO 'claude_ro'@'localhost';
 GRANT SELECT ON restaurant_hub.payroll_entries TO 'claude_ro'@'localhost';
 GRANT SELECT ON restaurant_hub.payroll_periods TO 'claude_ro'@'localhost';
 GRANT SELECT ON restaurant_hub.payroll_rules TO 'claude_ro'@'localhost';

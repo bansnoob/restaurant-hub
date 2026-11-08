@@ -269,6 +269,12 @@ Route::middleware(['auth', 'cashier.pos', 'branch.lock'])->group(function () {
     Route::delete('/payroll/reports/{payrollEntry}', [PayrollController::class, 'destroyReport'])
         ->middleware('role:owner|admin')
         ->name('payroll.reports.destroy');
+    Route::post('/payroll/reports/{payrollEntry}/deductions', [PayrollController::class, 'storeDeduction'])
+        ->middleware('role:owner|admin')
+        ->name('payroll.deductions.store');
+    Route::delete('/payroll/deductions/{payrollDeduction}', [PayrollController::class, 'destroyDeduction'])
+        ->middleware('role:owner|admin')
+        ->name('payroll.deductions.destroy');
     Route::delete('/payroll/{payrollPeriod}', [PayrollController::class, 'destroy'])
         ->middleware('role:owner|admin')
         ->name('payroll.destroy');
